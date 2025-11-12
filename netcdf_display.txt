@@ -1,0 +1,152 @@
+NetCDF File: tas_Amon_AWI-CM-1-1-MR_ssp585_r1i1p1f1_gn_201501-201512.nc
+================================================================================
+
+NetCDF Properties:
+    File format: NETCDF4_CLASSIC
+    Disk format: HDF5
+NetCDF Global Attributes:
+    Conventions: CF-1.7 CMIP-6.2
+    activity_id: ScenarioMIP
+    branch_method: standard
+    branch_time_in_child: empty
+    branch_time_in_parent: empty
+    creation_date: 2019-09-30T15:57:02Z
+    data_specs_version: 01.00.30
+    experiment: update of RCP8.5 based on SSP5
+    experiment_id: ssp585
+    external_variables: areacella
+    forcing_index: empty
+    frequency: mon
+    further_info_url: 4 spaces = new line; 8 spaces = line wrap
+        https://furtherinfo.es-doc.org/CMIP6.AWI.AWI-
+            CM-1-1-MR.ssp585.none.r1i1p1f1
+    grid: 4 spaces = new line; 8 spaces = line wrap
+        All grid attributes are set for the native grid and based on
+            information from attribute source.
+    grid_label: gn
+    history: 4 spaces = new line; 8 spaces = line wrap
+        2019-09-30T15:57:02Z ; CMOR rewrote data to be consistent with CMIP6,
+            CF-1.7 CMIP-6.2 and CF standards.
+    initialization_index: empty
+    institution: 4 spaces = new line; 8 spaces = line wrap
+        Alfred Wegener Institute, Helmholtz Centre for Polar and Marine
+            Research, Am Handelshafen 12, 27570 Bremerhaven, Germany
+    institution_id: AWI
+    mip_era: CMIP6
+    nominal_resolution: 100 km
+    parent_activity_id: CMIP
+    parent_experiment_id: historical
+    parent_mip_era: CMIP6
+    parent_source_id: AWI-CM-1-1-MR
+    parent_time_units: days since 1850-01-01 00:00:00
+    parent_variant_label: r1i1p1f1
+    physics_index: empty
+    product: model-output
+    realization_index: empty
+    realm: atmos
+    source: 4 spaces = new line; 8 spaces = line wrap
+        AWI-CM 1.1 MR (2018):
+        aerosol: none
+        atmos: ECHAM6.3.04p1 (T127L95 native atmosphere T127 gaussian grid; 384
+            x 192 longitude/latitude; 95 levels; top level 80 km)
+        atmosChem: none
+        land: JSBACH 3.20
+        landIce: none
+        ocean: FESOM 1.4 (unstructured grid in the horizontal with 830305 wet
+            nodes; 46 levels; top grid cell 0-5 m)
+        ocnBgchem: none
+        seaIce: FESOM 1.4
+    source_id: AWI-CM-1-1-MR
+    source_type: AOGCM
+    sub_experiment: none
+    sub_experiment_id: none
+    table_id: Amon
+    table_info: Creation Date:(09 May 2019) MD5:e6ef8ececc8f338646ebfb3aeed36bfc
+    title: AWI-CM-1-1-MR output prepared for CMIP6
+    variable_id: tas
+    variant_label: r1i1p1f1
+    license: 4 spaces = new line; 8 spaces = line wrap
+        CMIP6 model data produced by Alfred Wegener Institute is licensed under
+            a Creative Commons Attribution ShareAlike 4.0 International License
+            (https://creativecommons.org/licenses). Consult
+            https://pcmdi.llnl.gov/CMIP6/TermsOfUse for terms of use governing
+            CMIP6 output, including citation requirements and proper
+            acknowledgment. Further information about this data, including some
+            limitations, can be found via the further_info_url (recorded as a
+            global attribute in this file). The data producers and data
+            providers make no warranty, either express or implied, including,
+            but not limited to, warranties of merchantability and fitness for a
+            particular purpose. All liabilities arising from the supply of the
+            information (including any liability arising in negligence) are
+            excluded to the fullest extent permitted by law.
+    cmor_version: 3.4.0
+    tracking_id: hdl:21.14100/dfdcc564-4517-4b55-b327-2c5234b340a3
+NetCDF Dimension Information:
+    Name: time
+        size: 12
+        type: dtype('float64')
+        bounds: 'time_bnds'
+        units: 'days since 2015-01-01 00:00:00'
+        calendar: 'proleptic_gregorian'
+        axis: 'T'
+        long_name: 'time'
+        standard_name: 'time'
+    Name: lat
+        size: 192
+        type: dtype('float64')
+        bounds: 'lat_bnds'
+        units: 'degrees_north'
+        axis: 'Y'
+        long_name: 'Latitude'
+        standard_name: 'latitude'
+    Name: lon
+        size: 384
+        type: dtype('float64')
+        bounds: 'lon_bnds'
+        units: 'degrees_east'
+        axis: 'X'
+        long_name: 'Longitude'
+        standard_name: 'longitude'
+    Name: bnds
+        size: 2
+        WARNING: bnds does not contain variable attributes
+NetCDF Variable Information:
+    Name: time_bnds
+        dimensions: ('time', 'bnds')
+        size: 24
+        type: dtype('float64')
+    Name: lat_bnds
+        dimensions: ('lat', 'bnds')
+        size: 384
+        type: dtype('float64')
+    Name: lon_bnds
+        dimensions: ('lon', 'bnds')
+        size: 768
+        type: dtype('float64')
+    Name: height
+        dimensions: ()
+        size: 1
+        type: dtype('float64')
+        units: 'm'
+        axis: 'Z'
+        positive: 'up'
+        long_name: 'height'
+        standard_name: 'height'
+    Name: tas
+        dimensions: ('time', 'lat', 'lon')
+        size: 884736
+        type: dtype('float32')
+        standard_name: 'air_temperature'
+        long_name: 'Near-Surface Air Temperature'
+        comment: 'near-surface (usually, 2 meter) air temperature'
+        units: 'K'
+        original_name: 'temp2'
+        cell_methods: 'area: time: mean'
+        cell_measures: 'area: areacella'
+        history: "2019-09-30T15:57:02Z altered by CMOR: Treated scalar 
+dimension: 'height'. 2019-09-30T15:57:02Z altered by CMOR: replaced missing 
+value flag (-9e+33) with standard missing value (1e+20). 2019-09-30T15:57:02Z 
+altered by CMOR: Inverted axis: lat."
+        coordinates: 'height'
+        missing_value: np.float32(1e+20)
+        _FillValue: np.float32(1e+20)

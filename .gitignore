@@ -1,0 +1,17 @@
+# Virtual Environment
+venv/
+env/
+*.pyc
+__pycache__/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Output files
+*.nc
+*.jsonld
+
+# System files
+.DS_Store
