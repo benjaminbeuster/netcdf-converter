@@ -224,19 +224,25 @@ class NetCDFToCDIConverter:
 
     def create_dimensional_data_structure(self, metadata: Dict) -> Dict:
         """Create DimensionalDataStructure component."""
-        # Create component references (coordinates as dimensions, data vars as qualified measures)
-        # Note: boundary variables are excluded from structure components
+        # Create component references
+        # - Coordinate variables -> DimensionComponent
+        # - Data variables -> QualifiedMeasure
+        # - Boundary variables -> AttributeComponent
         component_refs = []
 
         # Add coordinate variables as dimension components
         for coord_var in metadata['coordinate_vars']:
             component_refs.append(f"{self.base_id}dimensionComponent-{coord_var}")
 
-        # Add data variables as qualified measures (excluding boundaries)
+        # Add data variables as qualified measures
         for data_var in metadata['data_vars']:
             component_refs.append(f"{self.base_id}qualifiedMeasure-{data_var}")
 
-        # Get all non-boundary variables for InstanceVariable references
+        # Add boundary variables as attribute components
+        for boundary_var in metadata['boundary_vars']:
+            component_refs.append(f"{self.base_id}attributeComponent-{boundary_var}")
+
+        # Get all variables for InstanceVariable references
         all_vars = (metadata['coordinate_vars'] + metadata['data_vars'] +
                    metadata['boundary_vars'])
 
@@ -247,7 +253,8 @@ class NetCDFToCDIConverter:
                 f"{self.base_id}instanceVariable-{var_name}"
                 for var_name in all_vars
             ],
-            "has_DataStructureComponent": component_refs
+            "has_DataStructureComponent": component_refs,
+            "has_PrimaryKey": f"{self.base_id}primaryKey"
         }
 
     def create_dimension_component(self, var_name: str, position: int) -> Dict:
@@ -268,6 +275,15 @@ class NetCDFToCDIConverter:
             "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
         }
 
+    def create_attribute_component(self, var_name: str, position: int) -> Dict:
+        """Create AttributeComponent for boundary/auxiliary variables."""
+        return {
+            "@id": f"{self.base_id}attributeComponent-{var_name}",
+            "@type": "AttributeComponent",
+            "isDefinedBy_InstanceVariable": f"{self.base_id}instanceVariable-{var_name}",
+            "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
+        }
+
     def create_component_position(self, var_name: str, position: int) -> Dict:
         """Create ComponentPosition."""
         return {
@@ -276,6 +292,27 @@ class NetCDFToCDIConverter:
             "value": position
         }
 
+    def create_primary_key(self, metadata: Dict) -> Dict:
+        """Create PrimaryKey component with all dimension components."""
+        primary_key_component_refs = []
+
+        # Add all dimension components to the primary key
+        for coord_var in metadata['coordinate_vars']:
+            primary_key_component_refs.append(f"{self.base_id}primaryKeyComponent-{coord_var}")
+
+        return {
+            "@id": f"{self.base_id}primaryKey",
+            "@type": "PrimaryKey",
+            "isComposedOf": primary_key_component_refs
+        }
+
+    def create_primary_key_component(self, var_name: str) -> Dict:
+        """Create PrimaryKeyComponent that corresponds to a DimensionComponent."""
+        return {
+            "@id": f"{self.base_id}primaryKeyComponent-{var_name}",
+            "@type": "PrimaryKeyComponent",
+            "correspondsTo_DataStructureComponent": f"{self.base_id}dimensionComponent-{var_name}"
+        }
 
     def create_physical_segment_layout(self) -> Dict:
         """Create PhysicalSegmentLayout component."""
@@ -301,11 +338,17 @@ class NetCDFToCDIConverter:
         models.append(self.create_dimensional_data_structure(metadata))
         models.append(self.create_physical_segment_layout())
 
+        # Add primary key components
+        models.append(self.create_primary_key(metadata))
+        for coord_var in metadata['coordinate_vars']:
+            models.append(self.create_primary_key_component(coord_var))
+
         # Add instance variables and value domains
         position = 1
         for var_name, var_info in metadata['variables'].items():
             is_coordinate = var_name in metadata['coordinate_vars']
             is_boundary = var_name in metadata['boundary_vars']
+            is_data_var = var_name in metadata['data_vars']
 
             # Create instance variable and value domain for all variables
             models.append(self.create_instance_variable(var_name, var_info, is_coordinate))
@@ -313,12 +356,16 @@ class NetCDFToCDIConverter:
             models.append(self.create_value_and_concept_description(var_name, var_info))
             models.append(self.create_component_position(var_name, position))
 
-            # Only create structure components for coordinates and true data variables
-            # (exclude boundary variables from structure components)
+            # Create appropriate structure component based on variable type:
+            # - Coordinate variables -> DimensionComponent
+            # - Data variables -> QualifiedMeasure
+            # - Boundary variables -> AttributeComponent
             if is_coordinate:
                 models.append(self.create_dimension_component(var_name, position))
-            elif not is_boundary:
+            elif is_data_var:
                 models.append(self.create_qualified_measure(var_name, position))
+            elif is_boundary:
+                models.append(self.create_attribute_component(var_name, position))
 
             position += 1
 
