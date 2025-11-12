@@ -207,16 +207,16 @@ class NetCDFToCDIConverter:
 
     def create_dimensional_data_structure(self, metadata: Dict) -> Dict:
         """Create DimensionalDataStructure component."""
-        # Create component references (coordinates as dimensions, data vars as measures)
+        # Create component references (coordinates as dimensions, data vars as qualified measures)
         component_refs = []
 
         # Add coordinate variables as dimension components
         for coord_var in metadata['coordinate_vars']:
             component_refs.append(f"{self.base_id}dimensionComponent-{coord_var}")
 
-        # Add data variables as measure components
+        # Add data variables as qualified measures
         for data_var in metadata['data_vars']:
-            component_refs.append(f"{self.base_id}measureComponent-{data_var}")
+            component_refs.append(f"{self.base_id}qualifiedMeasure-{data_var}")
 
         return {
             "@id": f"{self.base_id}dimensionalDataStructure",
@@ -237,11 +237,11 @@ class NetCDFToCDIConverter:
             "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
         }
 
-    def create_measure_component(self, var_name: str, position: int) -> Dict:
-        """Create MeasureComponent for data variables."""
+    def create_qualified_measure(self, var_name: str, position: int) -> Dict:
+        """Create QualifiedMeasure for data variables."""
         return {
-            "@id": f"{self.base_id}measureComponent-{var_name}",
-            "@type": "MeasureComponent",
+            "@id": f"{self.base_id}qualifiedMeasure-{var_name}",
+            "@type": "QualifiedMeasure",
             "isDefinedBy_InstanceVariable": f"{self.base_id}instanceVariable-{var_name}",
             "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
         }
@@ -292,7 +292,7 @@ class NetCDFToCDIConverter:
             if is_coordinate:
                 models.append(self.create_dimension_component(var_name, position))
             else:
-                models.append(self.create_measure_component(var_name, position))
+                models.append(self.create_qualified_measure(var_name, position))
 
             position += 1
 
