@@ -87,7 +87,7 @@ class NetCDFToCDIConverter:
             "@type": "PhysicalDataSet",
             "allowsDuplicates": False,
             "physicalFileName": metadata['filename'],
-            "correspondsTo_DataSet": f"{self.base_id}wideDataSet",
+            "correspondsTo_DataSet": f"{self.base_id}dimensionalDataSet",
             "formats": f"{self.base_id}dataStore",
             "has_PhysicalRecordSegment": [f"{self.base_id}physicalRecordSegment"]
         }
@@ -193,35 +193,34 @@ class NetCDFToCDIConverter:
 
         return description
 
-    def create_wide_dataset(self, metadata: Dict) -> Dict:
-        """Create WideDataSet component."""
+    def create_dimensional_dataset(self, metadata: Dict) -> Dict:
+        """Create DimensionalDataSet component."""
         return {
-            "@id": f"{self.base_id}wideDataSet",
-            "@type": "WideDataSet",
+            "@id": f"{self.base_id}dimensionalDataSet",
+            "@type": "DimensionalDataSet",
             "name": {
                 "@type": "ObjectName",
                 "name": metadata['filename']
             },
-            "has_DataStructure": f"{self.base_id}wideDataStructure",
-            "isStructuredBy_PrimaryKey": f"{self.base_id}primaryKey"
+            "has_DataStructure": f"{self.base_id}dimensionalDataStructure"
         }
 
-    def create_wide_data_structure(self, metadata: Dict) -> Dict:
-        """Create WideDataStructure component."""
-        # Create component references (coordinates as identifiers, data vars as measures)
+    def create_dimensional_data_structure(self, metadata: Dict) -> Dict:
+        """Create DimensionalDataStructure component."""
+        # Create component references (coordinates as dimensions, data vars as measures)
         component_refs = []
 
-        # Add coordinate variables as identifier components
+        # Add coordinate variables as dimension components
         for coord_var in metadata['coordinate_vars']:
-            component_refs.append(f"{self.base_id}identifierComponent-{coord_var}")
+            component_refs.append(f"{self.base_id}dimensionComponent-{coord_var}")
 
         # Add data variables as measure components
         for data_var in metadata['data_vars']:
             component_refs.append(f"{self.base_id}measureComponent-{data_var}")
 
         return {
-            "@id": f"{self.base_id}wideDataStructure",
-            "@type": "WideDataStructure",
+            "@id": f"{self.base_id}dimensionalDataStructure",
+            "@type": "DimensionalDataStructure",
             "has_InstanceVariable": [
                 f"{self.base_id}instanceVariable-{var_name}"
                 for var_name in metadata['variables'].keys()
@@ -229,11 +228,11 @@ class NetCDFToCDIConverter:
             "has_DataStructureComponent": component_refs
         }
 
-    def create_identifier_component(self, var_name: str, position: int) -> Dict:
-        """Create IdentifierComponent for coordinate variables."""
+    def create_dimension_component(self, var_name: str, position: int) -> Dict:
+        """Create DimensionComponent for coordinate variables."""
         return {
-            "@id": f"{self.base_id}identifierComponent-{var_name}",
-            "@type": "IdentifierComponent",
+            "@id": f"{self.base_id}dimensionComponent-{var_name}",
+            "@type": "DimensionComponent",
             "isDefinedBy_InstanceVariable": f"{self.base_id}instanceVariable-{var_name}",
             "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
         }
@@ -255,24 +254,6 @@ class NetCDFToCDIConverter:
             "value": position
         }
 
-    def create_primary_key(self, metadata: Dict) -> Dict:
-        """Create PrimaryKey using coordinate variables."""
-        return {
-            "@id": f"{self.base_id}primaryKey",
-            "@type": "PrimaryKey",
-            "has_PrimaryKeyComponent": [
-                f"{self.base_id}primaryKeyComponent-{coord_var}"
-                for coord_var in metadata['coordinate_vars']
-            ]
-        }
-
-    def create_primary_key_component(self, var_name: str) -> Dict:
-        """Create PrimaryKeyComponent."""
-        return {
-            "@id": f"{self.base_id}primaryKeyComponent-{var_name}",
-            "@type": "PrimaryKeyComponent",
-            "isDefinedBy_InstanceVariable": f"{self.base_id}instanceVariable-{var_name}"
-        }
 
     def create_physical_segment_layout(self) -> Dict:
         """Create PhysicalSegmentLayout component."""
@@ -294,9 +275,8 @@ class NetCDFToCDIConverter:
         models.append(self.create_data_store(metadata))
         models.append(self.create_logical_record(metadata))
         models.append(self.create_physical_record_segment(metadata))
-        models.append(self.create_wide_dataset(metadata))
-        models.append(self.create_wide_data_structure(metadata))
-        models.append(self.create_primary_key(metadata))
+        models.append(self.create_dimensional_dataset(metadata))
+        models.append(self.create_dimensional_data_structure(metadata))
         models.append(self.create_physical_segment_layout())
 
         # Add instance variables and value domains
@@ -310,8 +290,7 @@ class NetCDFToCDIConverter:
             models.append(self.create_component_position(var_name, position))
 
             if is_coordinate:
-                models.append(self.create_identifier_component(var_name, position))
-                models.append(self.create_primary_key_component(var_name))
+                models.append(self.create_dimension_component(var_name, position))
             else:
                 models.append(self.create_measure_component(var_name, position))
 
