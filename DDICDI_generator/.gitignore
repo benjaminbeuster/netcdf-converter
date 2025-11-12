@@ -1,0 +1,32 @@
+# .gitignore
+__pycache__/
+*.py[cod]
+*$py.class
+test.py
+test.ipynb
+lists.txt
+# If you are using PyCharm
+.idea/
+
+# If you are using Jupyter notebooks
+.ipynb_checkpoints
+
+# The directory named venv, or any other name you gave to your virtual environment directory
+.venv/
+#backup files
+.backup/
+
+#backup files
+.github/
+files/
+/test
+output.xml
+temp_output2.xml
+pyproject.toml
+.DS_Store
+app_mai.py
+validation/
+DDICDI_converter_JSONLD_incremental_v1.py
+keyvalue.json
+
+*.json

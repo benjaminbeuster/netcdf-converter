@@ -9,9 +9,14 @@ __pycache__/
 .idea/
 .claude/
 
-# Output files
+# Output files - NetCDF data files
 *.nc
+*.nc4
+*.netcdf
 *.jsonld
+
+# Output files - Generated JSON-LD (keep example outputs if needed)
+# *.jsonld  # Uncomment to ignore all jsonld files
 tas_sample_data.json
 *_values.json
 tas_all_data.json
@@ -19,4 +24,26 @@ tas_all_data.json
 
 # System files
 .DS_Store
-DDICDI_generator/
+**/.DS_Store
+
+# DDICDI_generator - Only ignore temporary/generated files within the tool
+DDICDI_generator/__pycache__/
+DDICDI_generator/*.pyc
+DDICDI_generator/venv/
+DDICDI_generator/env/
+DDICDI_generator/.venv/
+DDICDI_generator/*.egg-info/
+DDICDI_generator/dist/
+DDICDI_generator/build/
+DDICDI_generator/.pytest_cache/
+DDICDI_generator/lists.txt
+DDICDI_generator/*.log
+
+# DDICDI_generator - Ignore uploaded/generated files and temp outputs
+DDICDI_generator/uploaded_*
+DDICDI_generator/output_*.jsonld
+DDICDI_generator/temp_*.jsonld
+
+# Keep the source code but ignore Azure deployment files if not needed
+# DDICDI_generator/.azure/
+# DDICDI_generator/azure.yaml
