@@ -30,7 +30,8 @@ class NetCDFToCDIConverter:
             'global_attrs': dict(self.ds.attrs),
             'coordinate_vars': [],
             'data_vars': [],
-            'boundary_vars': []
+            'boundary_vars': [],
+            'excluded_vars': []
         }
 
         # First pass: identify boundary/auxiliary variables
@@ -47,6 +48,13 @@ class NetCDFToCDIConverter:
             if var_name.endswith('_bnds') or var_name.endswith('_bounds'):
                 boundary_vars.add(var_name)
 
+        # Identify scalar coordinates (to be excluded)
+        scalar_coords = set()
+        for var_name, var in self.ds.variables.items():
+            # Check if it's a coordinate with no dimensions or size 1
+            if var_name in self.ds.coords and (len(var.dims) == 0 or var.size == 1):
+                scalar_coords.add(var_name)
+
         # Second pass: classify variables
         for var_name, var in self.ds.variables.items():
             var_info = {
@@ -58,9 +66,11 @@ class NetCDFToCDIConverter:
             }
             metadata['variables'][var_name] = var_info
 
-            # Classify variables
-            if var_name in boundary_vars:
-                metadata['boundary_vars'].append(var_name)
+            # Apply filtering rules
+            # Rule 1 & 2: Exclude boundary variables and scalar coordinates
+            if var_name in boundary_vars or var_name in scalar_coords:
+                metadata['excluded_vars'].append(var_name)
+            # Classify remaining variables
             elif var_name in self.ds.coords:
                 metadata['coordinate_vars'].append(var_name)
             else:
@@ -121,12 +131,15 @@ class NetCDFToCDIConverter:
 
     def create_logical_record(self, metadata: Dict) -> Dict:
         """Create LogicalRecord component."""
+        # Get all non-excluded variables
+        all_vars = metadata['coordinate_vars'] + metadata['data_vars']
+
         return {
             "@id": f"{self.base_id}logicalRecord",
             "@type": "LogicalRecord",
             "has_InstanceVariable": [
                 f"{self.base_id}instanceVariable-{var_name}"
-                for var_name in metadata['variables'].keys()
+                for var_name in all_vars
             ]
         }
 
@@ -224,10 +237,10 @@ class NetCDFToCDIConverter:
 
     def create_dimensional_data_structure(self, metadata: Dict) -> Dict:
         """Create DimensionalDataStructure component."""
-        # Create component references
+        # Create component references (excluding filtered variables)
         # - Coordinate variables -> DimensionComponent
         # - Data variables -> QualifiedMeasure
-        # - Boundary variables -> AttributeComponent
+        # - Boundary variables -> AttributeComponent (excluded now)
         component_refs = []
 
         # Add coordinate variables as dimension components
@@ -238,13 +251,10 @@ class NetCDFToCDIConverter:
         for data_var in metadata['data_vars']:
             component_refs.append(f"{self.base_id}qualifiedMeasure-{data_var}")
 
-        # Add boundary variables as attribute components
-        for boundary_var in metadata['boundary_vars']:
-            component_refs.append(f"{self.base_id}attributeComponent-{boundary_var}")
+        # Note: boundary_vars are now excluded, so we don't add them
 
-        # Get all variables for InstanceVariable references
-        all_vars = (metadata['coordinate_vars'] + metadata['data_vars'] +
-                   metadata['boundary_vars'])
+        # Get all non-excluded variables for InstanceVariable references
+        all_vars = metadata['coordinate_vars'] + metadata['data_vars']
 
         return {
             "@id": f"{self.base_id}dimensionalDataStructure",
@@ -343,14 +353,19 @@ class NetCDFToCDIConverter:
         for coord_var in metadata['coordinate_vars']:
             models.append(self.create_primary_key_component(coord_var))
 
-        # Add instance variables and value domains
+        # Add instance variables and value domains (skip excluded variables)
         position = 1
         for var_name, var_info in metadata['variables'].items():
             is_coordinate = var_name in metadata['coordinate_vars']
             is_boundary = var_name in metadata['boundary_vars']
             is_data_var = var_name in metadata['data_vars']
+            is_excluded = var_name in metadata['excluded_vars']
 
-            # Create instance variable and value domain for all variables
+            # Skip excluded variables
+            if is_excluded:
+                continue
+
+            # Create instance variable and value domain for all non-excluded variables
             models.append(self.create_instance_variable(var_name, var_info, is_coordinate))
             models.append(self.create_substantive_value_domain(var_name, var_info))
             models.append(self.create_value_and_concept_description(var_name, var_info))
@@ -359,7 +374,7 @@ class NetCDFToCDIConverter:
             # Create appropriate structure component based on variable type:
             # - Coordinate variables -> DimensionComponent
             # - Data variables -> QualifiedMeasure
-            # - Boundary variables -> AttributeComponent
+            # - Boundary variables -> AttributeComponent (won't occur since boundaries are excluded)
             if is_coordinate:
                 models.append(self.create_dimension_component(var_name, position))
             elif is_data_var:
