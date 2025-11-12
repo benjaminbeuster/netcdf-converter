@@ -12,6 +12,7 @@ __pycache__/
 # Output files
 *.nc
 *.jsonld
+tas_sample_data.json
 
 # System files
 .DS_Store
