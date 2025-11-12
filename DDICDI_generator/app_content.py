@@ -32,7 +32,16 @@ This profile utilizes 29 classes from the DDI-CDI model (v1.0) and 2 SKOS classe
 current_date = datetime.now().strftime('%d.%m.%Y')
 
 about_text = f'''
-This prototype converts NetCDF files to DDI-CDI JSON-LD format using the DimensionalDataStructure pattern. It was initially developed by Sikt as part of the [WorldFAIR Project](https://worldfair-project.eu/) and further developed under [FAIR Impact](https://www.fair-impact.eu/). It is designed to facilitate the implementation of [DDI-CDI](https://ddialliance.org/Specification/DDI-CDI/) and to support training activities within the DDI community. For further information, please contact [Benjamin Beuster](mailto:benjamin.beuster@sikt.no). Last updated on: {current_date}
+This prototype converts NetCDF files to DDI-CDI JSON-LD format using the DimensionalDataStructure pattern. It was initially developed by Sikt as part of the [WorldFAIR Project](https://worldfair-project.eu/) and further developed under [FAIR Impact](https://www.fair-impact.eu/). It is designed to facilitate the implementation of [DDI-CDI](https://ddialliance.org/Specification/DDI-CDI/) and to support training activities within the DDI community.
+
+### How to use:
+1. **Upload a NetCDF file** - Drag and drop or select a .nc, .nc4, or .netcdf file
+2. **Select a variable** - Choose which data variable to import from the list (all related dimensions will be automatically included)
+3. **Assign roles** - Verify the variable roles (Dimension/Measure/Attribute) in the table
+4. **Generate output** - Toggle "Include data rows" to include actual data values in the JSON-LD output
+5. **Download** - Click the JSON-LD button to download the generated metadata
+
+For further information, please contact [Benjamin Beuster](mailto:benjamin.beuster@sikt.no). Last updated on: {current_date}
 '''
 
 app_title = 'DDI-CDI Converter for NetCDF (Prototype)'

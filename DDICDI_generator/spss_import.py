@@ -1376,11 +1376,97 @@ def create_variable_view2(df_meta):
     return variable_view[['name', 'data type', 'label', 'values', 'missing', 'measure']]
 
 
-def read_netcdf(filename: Path, sample_size=1000, **kwargs):
+def list_netcdf_variables(filename: Path):
+    """
+    List all variables in a NetCDF file without loading data.
+
+    Returns a list of dictionaries containing variable metadata for user selection.
+    Shows ALL variables including boundaries, scalars, coordinates, and data variables.
+
+    Parameters:
+    -----------
+    filename : Path
+        Path to the NetCDF file
+
+    Returns:
+    --------
+    list : List of dicts with keys: name, type, dimensions, size, attrs, category
+    """
+    filename = Path(filename)
+
+    if not filename.suffix.lower() in ['.nc', '.nc4', '.netcdf']:
+        raise ValueError(f"Unsupported file type! Expected .nc, .nc4, or .netcdf, got: {filename.suffix}")
+
+    try:
+        ds = xr.open_dataset(filename)
+    except Exception as e:
+        raise ValueError(f"Could not read NetCDF file: {e}")
+
+    variables_info = []
+
+    # Get dimensions info
+    dimensions = list(ds.dims.keys())
+    dim_sizes = {dim: ds.dims[dim] for dim in dimensions}
+
+    # Identify coordinate variables
+    coord_vars = list(ds.coords.keys())
+
+    # Identify data variables
+    data_vars = list(ds.data_vars.keys())
+
+    # Check for boundary variables
+    boundary_vars = set()
+    for var_name in list(ds.variables.keys()):
+        if var_name.endswith(('_bnds', '_bounds', '_bnd', '_bound')):
+            boundary_vars.add(var_name)
+        # Also check if variable is referenced as bounds
+        if var_name in ds.variables:
+            for coord_name, coord in ds.coords.items():
+                if 'bounds' in coord.attrs and coord.attrs['bounds'] == var_name:
+                    boundary_vars.add(var_name)
+
+    # Process all variables
+    for var_name in ds.variables.keys():
+        var = ds.variables[var_name]
+
+        # Determine category
+        if var_name in coord_vars:
+            if len(var.dims) == 0 or var.size == 1:
+                category = "Scalar Coordinate"
+            else:
+                category = "Coordinate"
+        elif var_name in boundary_vars:
+            category = "Boundary Variable"
+        elif var_name in data_vars:
+            category = "Data Variable"
+        else:
+            category = "Other"
+
+        # Get variable info
+        var_info = {
+            'name': var_name,
+            'type': str(var.dtype),
+            'dimensions': list(var.dims) if var.dims else [],
+            'size': int(var.size),
+            'attrs': dict(var.attrs),
+            'category': category,
+            'long_name': var.attrs.get('long_name', ''),
+            'standard_name': var.attrs.get('standard_name', ''),
+            'units': var.attrs.get('units', ''),
+        }
+
+        variables_info.append(var_info)
+
+    ds.close()
+
+    return variables_info
+
+
+def read_netcdf(filename: Path, sample_size=1000, selected_variable=None, **kwargs):
     """
     Read NetCDF file and create a metadata structure compatible with what pyreadstat returns
 
-    Extracts dimensions, coordinates, and data variables from NetCDF files and converts them
+    Extracts dimensions, coordinates, and a selected data variable from NetCDF files and converts them
     to a flattened tabular structure with sample data for preview.
 
     Parameters:
@@ -1389,6 +1475,8 @@ def read_netcdf(filename: Path, sample_size=1000, **kwargs):
         Path to the NetCDF file
     sample_size : int, default 1000
         Maximum number of data points to include in sample (for performance)
+    selected_variable : str, optional
+        Name of the specific data variable to extract. If None, extracts all non-boundary/non-scalar variables.
     **kwargs : dict
         Additional arguments (for compatibility)
 
@@ -1415,12 +1503,30 @@ def read_netcdf(filename: Path, sample_size=1000, **kwargs):
     coord_vars = list(ds.coords.keys())
     data_vars = list(ds.data_vars.keys())
 
-    # Filter out boundary variables (variables ending with _bounds, _bnds, etc.)
-    boundary_patterns = ['_bounds', '_bnds', '_bnd', '_bound']
-    data_vars = [var for var in data_vars if not any(var.endswith(pattern) for pattern in boundary_patterns)]
+    # If a specific variable is selected, filter to only that variable
+    if selected_variable:
+        if selected_variable in data_vars:
+            # Keep only the selected data variable
+            data_vars = [selected_variable]
+        elif selected_variable in coord_vars:
+            # If user somehow selected a coordinate, treat it as data variable
+            data_vars = [selected_variable]
+        else:
+            raise ValueError(f"Selected variable '{selected_variable}' not found in NetCDF file")
 
-    # Filter out scalar coordinates (dimensions with size 1)
-    coord_vars = [var for var in coord_vars if var in dimensions and dim_sizes.get(var, 0) > 1]
+        # Get the dimensions used by the selected variable
+        selected_var_dims = list(ds.variables[selected_variable].dims)
+
+        # Filter coordinates to only those used by the selected variable
+        # Keep non-scalar coordinates that are dimensions of the selected variable
+        coord_vars = [var for var in coord_vars if var in selected_var_dims and var in dimensions and dim_sizes.get(var, 0) > 1]
+    else:
+        # Legacy behavior: filter out boundary variables and scalar coordinates
+        boundary_patterns = ['_bounds', '_bnds', '_bnd', '_bound']
+        data_vars = [var for var in data_vars if not any(var.endswith(pattern) for pattern in boundary_patterns)]
+
+        # Filter out scalar coordinates (dimensions with size 1)
+        coord_vars = [var for var in coord_vars if var in dimensions and dim_sizes.get(var, 0) > 1]
 
     # Calculate total number of data points
     total_points = 1

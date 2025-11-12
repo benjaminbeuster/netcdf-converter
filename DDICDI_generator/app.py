@@ -13,7 +13,7 @@ from DDICDI_converter_JSONLD_incremental import (
     generate_complete_json_ld,
     MemoryManager
 )
-from spss_import import read_netcdf, create_variable_view
+from spss_import import read_netcdf, create_variable_view, list_netcdf_variables
 from app_content import markdown_text, colors, style_dict, table_style, header_dict, app_title, app_description, about_text
 from dash.exceptions import PreventUpdate
 import rdflib
@@ -185,6 +185,79 @@ app.layout = dbc.Container([
                 accept=".nc,.nc4,.netcdf"
             ),
             html.Br(),
+
+            # Variable Selection Modal for NetCDF files
+            dbc.Modal([
+                dbc.ModalHeader(dbc.ModalTitle("Select NetCDF Variable to Import")),
+                dbc.ModalBody([
+                    html.P(
+                        "Multiple variables were found in this NetCDF file. Please select which data variable you want to import. "
+                        "All dimensions used by the selected variable will be automatically included.",
+                        style={
+                            'marginBottom': '15px',
+                            'color': colors['secondary'],
+                            'fontSize': '14px',
+                            'fontFamily': "'Inter', sans-serif"
+                        }
+                    ),
+                    dcc.Loading(
+                        id="loading-variable-table",
+                        type="default",
+                        children=[
+                            dash_table.DataTable(
+                                id='variable-selection-table',
+                                columns=[
+                                    {"name": "Select", "id": "select"},
+                                    {"name": "Name", "id": "name"},
+                                    {"name": "Type", "id": "type"},
+                                    {"name": "Category", "id": "category"},
+                                    {"name": "Dimensions", "id": "dimensions"},
+                                    {"name": "Size", "id": "size"},
+                                    {"name": "Description", "id": "long_name"}
+                                ],
+                                data=[],
+                                row_selectable='single',
+                                selected_rows=[],
+                                style_table={
+                                    'overflowX': 'auto',
+                                    'overflowY': 'auto',
+                                    'maxHeight': '400px',
+                                    'borderRadius': '8px',
+                                    'border': f'1px solid {colors["border"]}'
+                                },
+                                style_header=header_dict,
+                                style_cell=style_dict,
+                                style_data_conditional=[
+                                    {
+                                        'if': {'column_id': 'category', 'filter_query': '{category} eq "Data Variable"'},
+                                        'backgroundColor': '#e3f2fd',
+                                        'fontWeight': '500'
+                                    },
+                                    {
+                                        'if': {'column_id': 'category', 'filter_query': '{category} eq "Coordinate"'},
+                                        'backgroundColor': '#f3e5f5',
+                                        'fontWeight': '500'
+                                    },
+                                    {
+                                        'if': {'column_id': 'category', 'filter_query': '{category} eq "Boundary Variable"'},
+                                        'backgroundColor': '#fff3e0',
+                                        'fontWeight': '500'
+                                    },
+                                    {
+                                        'if': {'column_id': 'category', 'filter_query': '{category} eq "Scalar Coordinate"'},
+                                        'backgroundColor': '#fce4ec',
+                                        'fontWeight': '500'
+                                    }
+                                ]
+                            )
+                        ]
+                    )
+                ]),
+                dbc.ModalFooter([
+                    dbc.Button("Cancel", id="variable-modal-cancel", color="secondary", className="mr-1"),
+                    dbc.Button("Continue", id="variable-modal-confirm", color="primary")
+                ])
+            ], id="variable-selection-modal", is_open=False, size="xl", backdrop="static"),
 
             # Add style and id to the Switch View button
             dbc.Button(
@@ -467,6 +540,10 @@ app.layout = dbc.Container([
             dcc.Store(id='processing-data', data={'status': 'idle'}),
             dcc.Store(id='full-json-store'),
             dcc.Store(id='file-type-store'),
+            # Variable selection workflow stores
+            dcc.Store(id='variable-list-store'),  # Stores list of variables from NetCDF
+            dcc.Store(id='selected-variable-store'),  # Stores user's selected variable
+            dcc.Store(id='temp-file-store'),  # Stores temporary file path
         ])
     ]),
     about_section  # <-- add this line to include the about_section
@@ -524,6 +601,102 @@ def get_default_roles_for_variables(df_meta, filename):
     return default_roles
 
 # Define callbacks
+
+# Stage 1: Handle file upload and show variable selection modal
+@app.callback(
+    [Output('variable-selection-modal', 'is_open'),
+     Output('variable-selection-table', 'data'),
+     Output('temp-file-store', 'data'),
+     Output('variable-list-store', 'data')],
+    [Input('upload-data', 'contents'),
+     Input('variable-modal-cancel', 'n_clicks'),
+     Input('variable-modal-confirm', 'n_clicks')],
+    [State('upload-data', 'filename'),
+     State('variable-selection-table', 'selected_rows'),
+     State('variable-list-store', 'data'),
+     State('temp-file-store', 'data')]
+)
+def handle_file_upload_stage1(contents, cancel_clicks, confirm_clicks, filename, selected_rows, variable_list, temp_file_path):
+    """
+    First stage: Upload file, list variables, show modal
+    """
+    ctx = dash.callback_context
+    trigger = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+
+    # Handle cancel button
+    if trigger == 'variable-modal-cancel':
+        # Clean up temp file if it exists
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+        return False, [], None, None
+
+    # Handle confirm button
+    if trigger == 'variable-modal-confirm':
+        # Close modal, but keep the temp file and variable list for stage 2
+        return False, dash.no_update, dash.no_update, dash.no_update
+
+    # Handle file upload
+    if trigger == 'upload-data' and contents is not None:
+        try:
+            # Decode and save uploaded file to temp location
+            content_type, content_string = contents.split(',')
+            decoded = base64.b64decode(content_string)
+
+            with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as tmp_file:
+                tmp_file.write(decoded)
+                tmp_filename = tmp_file.name
+
+            # Check if it's a NetCDF file
+            if '.nc' in tmp_filename or '.netcdf' in tmp_filename or '.nc4' in tmp_filename:
+                # List all variables in the file
+                variables = list_netcdf_variables(tmp_filename)
+
+                # Format for display in table
+                table_data = []
+                for var in variables:
+                    table_data.append({
+                        'select': '',  # Empty column for selection
+                        'name': var['name'],
+                        'type': var['type'],
+                        'category': var['category'],
+                        'dimensions': ', '.join(var['dimensions']),
+                        'size': str(var['size']),
+                        'long_name': var.get('long_name', '')
+                    })
+
+                # Show modal with variable list
+                return True, table_data, tmp_filename, variables
+            else:
+                # Not a NetCDF file - clean up and don't show modal
+                os.unlink(tmp_filename)
+                return False, [], None, None
+
+        except Exception as e:
+            print(f"Error in stage 1 upload: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return False, [], None, None
+
+    # Default: keep modal closed
+    return False, [], None, None
+
+# Callback to store selected variable when user confirms
+@app.callback(
+    Output('selected-variable-store', 'data'),
+    [Input('variable-modal-confirm', 'n_clicks')],
+    [State('variable-selection-table', 'selected_rows'),
+     State('variable-list-store', 'data')]
+)
+def store_selected_variable(confirm_clicks, selected_rows, variable_list):
+    """
+    Store the selected variable when user clicks confirm
+    """
+    if confirm_clicks and selected_rows and variable_list:
+        selected_idx = selected_rows[0]
+        selected_var = variable_list[selected_idx]
+        return selected_var['name']
+    return None
+
 @app.callback(
     [Output('table1-instruction', 'style'),
      Output('table2-instruction', 'style')],
@@ -579,16 +752,17 @@ def truncate_for_display(json_str, max_length=500000, include_metadata=False):
      Output('upload-data', 'contents'),
      Output('full-json-store', 'data'),
      Output('file-type-store', 'data')],
-    [Input('upload-data', 'contents'),
+    [Input('selected-variable-store', 'data'),  # Changed from upload-data
      Input('table2', 'selected_rows'),
      Input('include-metadata', 'value'),
      Input('table2', 'data'),
      Input('process-all-rows', 'value')],
-    [State('upload-data', 'filename')]
+    [State('upload-data', 'filename'),
+     State('temp-file-store', 'data')]  # Added temp file store
 )
-def combined_callback(contents, selected_rows, include_metadata, table2_data, process_all_rows, filename):
+def combined_callback(selected_variable, selected_rows, include_metadata, table2_data, process_all_rows, filename, tmp_filename):
     global df, df_meta
-    
+
     ctx = dash.callback_context
     trigger = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
 
@@ -718,33 +892,25 @@ def combined_callback(contents, selected_rows, include_metadata, table2_data, pr
             # Return error state
             return [dash.no_update] * 15
 
-    # Handle file upload (both initial and subsequent)
-    if trigger == 'upload-data' and contents is not None:
+    # Handle file processing after variable selection
+    if trigger == 'selected-variable-store' and selected_variable is not None and tmp_filename is not None:
         try:
             # Clear previous data (this will be replaced with new classifications from file processing)
             if 'df_meta' in globals():
-                # Just note that we're clearing previous metadata - 
+                # Just note that we're clearing previous metadata -
                 # new classifications will be set by the file processing functions
                 pass
-            
+
             # Reset lists.txt
             with open('lists.txt', 'w') as f:
                 f.write("Measures: []\n")
                 f.write("Identifiers: []\n")
                 f.write("Attributes: []\n")
 
-            # Process the uploaded file
-            content_type, content_string = contents.split(',')
-            decoded = base64.b64decode(content_string)
-            
-            with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as tmp_file:
-                tmp_file.write(decoded)
-                tmp_filename = tmp_file.name
-
             if '.nc' in tmp_filename or '.netcdf' in tmp_filename or '.nc4' in tmp_filename:
-                print("Reading file using read_netcdf")
-                # Read NetCDF file with sample size limit for performance
-                df, df_meta, file_name, n_rows = read_netcdf(tmp_filename, sample_size=1000)
+                print(f"Reading file using read_netcdf with selected variable: {selected_variable}")
+                # Read NetCDF file with selected variable
+                df, df_meta, file_name, n_rows = read_netcdf(tmp_filename, sample_size=1000, selected_variable=selected_variable)
                 df2 = create_variable_view(df_meta)
             else:
                 raise ValueError(f"Unsupported file type. File must be .nc, .nc4, or .netcdf, got: {tmp_filename}")
@@ -841,9 +1007,6 @@ def combined_callback(contents, selected_rows, include_metadata, table2_data, pr
 
             # Create instruction text for table2 (column view)
             instruction_text2 = f"The table below shows all {len(df.columns)} columns from the dataset '{filename}'. Please select the appropriate role for each variable (column)."
-
-            # Clean up temp file
-            os.unlink(tmp_filename)
 
             # Before returning, store the full JSON and truncate for display
             if json_ld_data and json_ld_data != "Error generating JSON-LD":
@@ -943,197 +1106,13 @@ def combined_callback(contents, selected_rows, include_metadata, table2_data, pr
             'netcdf'  # file type
         )
 
-    if not contents:
+    # If no data has been loaded yet (no selected variable), return empty state
+    if not selected_variable or not tmp_filename:
         return [], [], [], [], [], [], get_button_group_style(visible=False), "", "", "", {'display': 'none'}, {'display': 'none'}, dash.no_update, None, 'netcdf'
 
-    try:
-        print("Step 1: Starting file processing")
-        # Decode and save uploaded file
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-        file_extension = os.path.splitext(filename)[1]
-
-        print("Step 2: Creating temp file")
-        with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as tmp_file:
-            tmp_file.write(decoded)
-            tmp_filename = tmp_file.name
-
-        print("Step 3: About to read file")
-        # Read NetCDF file
-        if '.nc' in tmp_filename or '.netcdf' in tmp_filename or '.nc4' in tmp_filename:
-            print("Reading file using read_netcdf")
-            # Read NetCDF file with sample size limit for performance
-            df, df_meta, file_name, n_rows = read_netcdf(tmp_filename, sample_size=1000)
-            df2 = create_variable_view(df_meta)
-        else:
-            raise ValueError(f"Unsupported file type. File must be .nc, .nc4, or .netcdf, got: {tmp_filename}")
-
-        print("Step 5: File read complete")
-        print(f"df_meta exists: {df_meta is not None}")
-        
-        # Initialize the classification attributes
-        df_meta.measure_vars = df_meta.column_names  # Default all to measures
-        df_meta.identifier_vars = []
-        df_meta.attribute_vars = []
-        
-        # Try to load existing classifications from lists.txt if it exists
-        try:
-            with open('lists.txt', 'r') as f:
-                content = f.read()
-                for line in content.split('\n'):
-                    if line.startswith('Measures:'):
-                        df_meta.measure_vars = eval(line.split(':', 1)[1].strip())
-                    elif line.startswith('Identifiers:'):
-                        df_meta.identifier_vars = eval(line.split(':', 1)[1].strip())
-                    elif line.startswith('Attributes:'):
-                        df_meta.attribute_vars = eval(line.split(':', 1)[1].strip())
-        except FileNotFoundError:
-            pass  # Use the defaults if file doesn't exist
-
-        # Prepare table data
-        columns1 = [{"name": i, "id": i} for i in df.columns]
-        columns2 = [
-            {
-                "name": "Select role",
-                "id": "roles",
-                "presentation": "dropdown",
-                "editable": True
-            }
-        ]
-        
-        # Only add columns that aren't already in df2
-        predefined_columns = {'roles'}
-        for col in df2.columns:
-            if col not in predefined_columns:
-                columns2.append({"name": col, "id": col, "editable": False})
-        
-        conditional_styles1 = style_data_conditional(df)
-        conditional_styles2 = style_data_conditional(df2)
-
-        # Add the roles column to df2 with appropriate default values based on file type
-        default_roles = get_default_roles_for_variables(df_meta, filename)
-        df2['roles'] = df2['name'].map(default_roles).fillna('measure')
-        
-        # Convert df2 to records for the table
-        table2_data = df2.to_dict('records')
-        
-        # Apply the default roles to df_meta immediately for NetCDF
-        measures = []
-        identifiers = []
-        attributes = []
-
-        # Process the default roles and apply them to df_meta
-        for row in table2_data:
-            role = row.get('roles', '')
-            if role == 'measure':
-                measures.append(row['name'])
-            elif role == 'identifier':
-                identifiers.append(row['name'])
-            elif role == 'attribute':
-                attributes.append(row['name'])
-
-        # Update df_meta with the default role assignments
-        df_meta.measure_vars = measures
-        df_meta.identifier_vars = identifiers
-        df_meta.attribute_vars = attributes
-
-        print(f"DEBUG: Applied default roles to df_meta during fallback file processing:")
-        print(f"  - measures: {measures}")
-        print(f"  - identifiers: {identifiers}")
-        print(f"  - attributes: {attributes}")
-
-        # Get selected variables
-        vars = []
-        if selected_rows and table2_data:
-            vars = [table2_data[row_index]["name"] for row_index in selected_rows]
-
-        # Modify this section to properly handle include_metadata
-        if trigger == 'include-metadata' or trigger == 'upload-data':
-            if include_metadata:
-                data_subset = df
-                if process_all_rows:
-                    instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will include ALL {len(df)} rows."
-                elif len(df) > MAX_ROWS_TO_PROCESS:
-                    instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will include up to {MAX_ROWS_TO_PROCESS} rows due to performance limitations."
-                else:
-                    instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will include all {len(df)} rows."
-            else:
-                data_subset = df.head(0)
-                instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will not include any data rows."
-        else:
-            # For other triggers, maintain the current state
-            data_subset = df if include_metadata else df.head(0)
-            if include_metadata:
-                if process_all_rows:
-                    instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will include ALL {len(df)} rows."
-                elif len(df) > MAX_ROWS_TO_PROCESS:
-                    instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will include up to {MAX_ROWS_TO_PROCESS} rows due to performance limitations."
-                else:
-                    instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will include all {len(df)} rows."
-            else:
-                instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will not include any data rows."
-
-        # Create instruction text for table2 (column view)
-        instruction_text2 = f"The table below shows all {len(df.columns)} columns from the dataset '{filename}'. Please select the appropriate role for each variable (column)."
-
-        # Generate only JSON-LD with the conditional data selection
-        # Determine optimal chunk size for large datasets
-        dynamic_chunk_size = CHUNK_SIZE
-        if process_all_rows and len(df) > CHUNK_SIZE:
-            try:
-                # Try to optimize chunk size based on available memory
-                dynamic_chunk_size = MemoryManager.optimize_chunk_size(df, df_meta)
-                print(f"Optimized chunk size: {dynamic_chunk_size} rows (based on available memory)")
-            except Exception as e:
-                print(f"Warning: Could not optimize chunk size, using default: {e}")
-                dynamic_chunk_size = CHUNK_SIZE
-                
-        json_ld_data = generate_complete_json_ld(
-            data_subset, 
-            df_meta,
-            spssfile=filename,
-            chunk_size=dynamic_chunk_size,
-            process_all_rows=process_all_rows,
-            max_rows=MAX_ROWS_TO_PROCESS
-        )
-
-        # Save classifications to lists.txt
-        if table2_data:
-            measures = [row['name'] for row in table2_data if row.get('roles') == 'measure']
-            identifiers = [row['name'] for row in table2_data if row.get('roles') == 'identifier']
-            attributes = [row['name'] for row in table2_data if row.get('roles') == 'attribute']
-
-            # Save to lists.txt
-            with open('lists.txt', 'w') as f:
-                f.write(f"Measures: {measures}\n")
-                f.write(f"Identifiers: {identifiers}\n")
-                f.write(f"Attributes: {attributes}\n")
-
-        # Before returning, store the full JSON and truncate for display
-        if json_ld_data and json_ld_data != "Error generating JSON-LD":
-            # Store the full JSON output for download BEFORE truncation
-            full_json = json_ld_data
-            # Truncate for display only if include_metadata is true
-            truncated_json, was_truncated = truncate_for_display(json_ld_data, include_metadata=include_metadata)
-            
-            return (df.head(PREVIEW_ROWS).to_dict('records'), columns1, conditional_styles1,
-                    table2_data, columns2, conditional_styles2,
-                    get_button_group_style(visible=True),  # Use helper function
-                    instruction_text1, instruction_text2, truncated_json,
-                    {'display': 'block'},
-                    {'display': 'inline-block', 'marginLeft': '15px', 'color': colors['secondary']},
-                    None,  # Clear the upload contents
-                    full_json,  # full JSON for download
-                    'netcdf'  # file type
-                )
-
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        return [], [], [], [], [], [], get_button_group_style(visible=False), "", "", "", {'display': 'none'}, {'display': 'none'}, None, None, 'netcdf'
-
-    finally:
-        if 'tmp_filename' in locals():
-            os.remove(tmp_filename)
+    # If we got here, something went wrong - return error state
+    print("ERROR: Reached unexpected fallback in combined_callback")
+    return [], [], [], [], [], [], get_button_group_style(visible=False), "", "", "", {'display': 'none'}, {'display': 'none'}, None, None, 'netcdf'
 
 # reset selected rows in datatable
 @app.callback(
