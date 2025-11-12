@@ -8,27 +8,27 @@
 1. Go to [Apache Jena Binary Distributions](https://jena.apache.org/download/#apache-jena-binary-distributions)
 2. Download the latest version (e.g., `apache-jena-5.2.0.zip`)
 3. Move and extract the file:
-
-bash
-Copy code
+```bash
 mv ~/Downloads/apache-jena-5.2.0.zip ~/apache-jena.zip
+```
+
 Extract the file:
-
-bash
-Copy code
+```bash
 unzip ~/apache-jena.zip -d ~/apache-jena
-Navigate to the Jena directory to confirm the contents:
+```
 
-bash
-Copy code
+Navigate to the Jena directory to confirm the contents:
+```bash
 cd ~/apache-jena/apache-jena-5.2.0
-Step 3: Set Up Environment Variables Correctly
+```
+
+#### Step 3: Set Up Environment Variables Correctly
 Ensure the environment variable in your .zshrc file points to the correct location:
-bash
-Copy code
+```bash
 echo 'export JENA_HOME=~/apache-jena/apache-jena-5.2.0' >> ~/.zshrc
 echo 'export PATH=$PATH:$JENA_HOME/bin' >> ~/.zshrc
 source ~/.zshrc
+```
 
 ### 2. Input Files
 - JSON-LD file containing your DDI-CDI data
@@ -47,27 +47,36 @@ source ~/.zshrc
 
 ## Step 1: Download SHACL Shapes File
 Download the latest DDI-CDI SHACL shapes file:
-
-bash
+```bash
 curl https://ddi-cdi.github.io/ddi-cdi_v1.0-post/encoding/shacl/ddi-cdi.shacl.ttl > ddi-cdi.shacl.ttl
+```
 
 ## Step 2: Convert JSON-LD to RDF
 Convert the JSON-LD file to Turtle format using Jena's riot tool:
-
-bash
+```bash
 riot --syntax=jsonld validation/ESS11-subset_v2.jsonld > validation/ESS11-subset_v2.ttl
+```
+
 This command converts your JSON-LD file to Turtle format (data.ttl), which is an RDF serialization format.
 
 ## Step 3: Validate Using SHACL
-You have two options for validation:
 
-bash
-
+### Basic Validation (output to console)
+```bash
 shacl validate --data=validation/ESS11-subset.jsonld --shapes=validation/ddi-cdi.shacl.ttl
 
-shacl validate --data=validation/CRON3W2e01_unscrambled (2).jsonld --shapes=validation/ddi-cdi.shacl.ttl
-
 shacl validate --data=validation/CRON3W2e01_unscrambled-2_DDICDI.jsonld --shapes=validation/ddi-cdi.shacl.ttl
+
+shacl validate --data=validation/sftlf_fx_AWI-CM-1-1-MR_ssp370_r1i1p1f1_gn_DDICDI.jsonld --shapes=validation/ddi-cdi.shacl.ttl
+```
+
+### Save Validation Report to File
+To save the validation output to a file, redirect the output:
+```bash
+shacl validate --data=validation/sftlf_fx_AWI-CM-1-1-MR_ssp370_r1i1p1f1_gn_DDICDI.jsonld --shapes=validation/ddi-cdi.shacl.ttl > validation/sftlf_fx_AWI-CM-1-1-MR_ssp370_r1i1p1f1_gn_DDICDI_validation-report.txt
+```
+
+**Note:** When running from the `DDICDI_generator` directory, use relative paths (`validation/...`). If running from the parent directory, use `DDICDI_generator/validation/...`.
 
 ## Additional Resources
 - [DDI-CDI Documentation](https://ddi-cdi.github.io/)

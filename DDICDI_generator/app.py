@@ -308,7 +308,7 @@ app.layout = dbc.Container([
                         type="default",
                         children=[
                             # Insert the instruction text here
-                            html.Div("Please select variable role. Identifiers are used for the PrimaryKey to uniquely identify the records.",
+                            html.Div("Variable roles are automatically assigned based on NetCDF structure. Dimensions are identifiers, data variables are measures.",
                                      id="table2-instruction",
                                      style={
                                          'color': colors['secondary'],
@@ -320,7 +320,7 @@ app.layout = dbc.Container([
 
                             dash_table.DataTable(
                                 id='table2',
-                                editable=True,
+                                editable=False,  # Changed to False - roles are now fixed
                                 persistence=True,
                                 persistence_type='session',
                                 row_selectable=False,  # Remove multi-selection
@@ -329,10 +329,9 @@ app.layout = dbc.Container([
                                 style_cell=style_dict,
                                 columns=[
                                     {
-                                        "name": "Select role",
+                                        "name": "role",  # Changed from "Select role"
                                         "id": "roles",
-                                        "presentation": "dropdown",
-                                        "editable": True
+                                        "editable": False  # Changed to False - roles are fixed
                                     },
                                     {
                                         "name": "name",
@@ -355,31 +354,11 @@ app.layout = dbc.Container([
                                         "editable": False
                                     }
                                 ],
-                                dropdown={
-                                    'roles': {
-                                        'options': NETCDF_DROPDOWN_OPTIONS,
-                                        'clearable': False
-                                    }
-                                },
-                                # Add these properties to ensure dropdown is clickable and visible
-                                css=[{
-                                    'selector': '.Select-menu-outer',
-                                    'rule': 'display: block !important'
-                                }],
                                 style_cell_conditional=[{
                                     'if': {'column_id': ['roles']},
                                     'textAlign': 'center',
                                     'minWidth': '100px',
-                                    'backgroundColor': 'rgba(33, 150, 243, 0.15)',  # Same as #2196f3 but with 15% opacity
-                                    'color': colors['primary'],
                                     'fontWeight': '500'
-                                }],
-                                style_data_conditional=[{
-                                    'if': {'column_id': ['roles']},
-                                    'cursor': 'pointer',
-                                    'backgroundColor': 'white',
-                                    'border': f'1px solid {colors["primary"]}',
-                                    'color': colors['primary']
                                 }]
                             ),
                         ]
@@ -858,7 +837,7 @@ def combined_callback(selected_variable, selected_rows, include_metadata, table2
                     instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will not include any data rows."
             
             # Create instruction text for table2 (column view)
-            instruction_text2 = f"The table below shows all {len(df.columns)} columns from the dataset '{filename}'. Please select the appropriate role for each variable (column)."
+            instruction_text2 = f"The table below shows all {len(df.columns)} columns from the dataset '{filename}'. Variable roles are automatically assigned based on NetCDF structure."
             
             # Before returning, store the full JSON and truncate for display
             if json_ld_data and json_ld_data != "Error generating JSON-LD":
@@ -927,13 +906,12 @@ def combined_callback(selected_variable, selected_rows, include_metadata, table2
             columns1 = [{"name": i, "id": i} for i in df.columns]
             columns2 = [
                 {
-                    "name": "Select role",
+                    "name": "role",  # Changed from "Select role"
                     "id": "roles",
-                    "presentation": "dropdown",
-                    "editable": True
+                    "editable": False  # Changed to False - roles are fixed
                 }
             ]
-            
+
             # Only add columns that aren't already in df2
             predefined_columns = {'roles'}
             for col in df2.columns:
@@ -1006,7 +984,7 @@ def combined_callback(selected_variable, selected_rows, include_metadata, table2
                 instruction_text1 = f"The table below shows the first {PREVIEW_ROWS} of {len(df)} rows from the dataset '{filename}'. The generated JSON-LD output will not include any data rows."
 
             # Create instruction text for table2 (column view)
-            instruction_text2 = f"The table below shows all {len(df.columns)} columns from the dataset '{filename}'. Please select the appropriate role for each variable (column)."
+            instruction_text2 = f"The table below shows all {len(df.columns)} columns from the dataset '{filename}'. Variable roles are automatically assigned based on NetCDF structure."
 
             # Before returning, store the full JSON and truncate for display
             if json_ld_data and json_ld_data != "Error generating JSON-LD":
