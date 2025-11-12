@@ -13,6 +13,7 @@ __pycache__/
 *.nc
 *.jsonld
 tas_sample_data.json
+*_values.json
 
 # System files
 .DS_Store
