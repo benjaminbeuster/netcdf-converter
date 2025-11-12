@@ -29,10 +29,25 @@ class NetCDFToCDIConverter:
             'variables': {},
             'global_attrs': dict(self.ds.attrs),
             'coordinate_vars': [],
-            'data_vars': []
+            'data_vars': [],
+            'boundary_vars': []
         }
 
-        # Classify variables
+        # First pass: identify boundary/auxiliary variables
+        boundary_vars = set()
+
+        # Check for variables referenced as bounds in coordinate attributes
+        for var_name, var in self.ds.variables.items():
+            if 'bounds' in var.attrs:
+                bounds_var = var.attrs['bounds']
+                boundary_vars.add(bounds_var)
+
+        # Also check for common boundary naming patterns
+        for var_name in self.ds.variables.keys():
+            if var_name.endswith('_bnds') or var_name.endswith('_bounds'):
+                boundary_vars.add(var_name)
+
+        # Second pass: classify variables
         for var_name, var in self.ds.variables.items():
             var_info = {
                 'name': var_name,
@@ -43,8 +58,10 @@ class NetCDFToCDIConverter:
             }
             metadata['variables'][var_name] = var_info
 
-            # Distinguish coordinate vs data variables
-            if var_name in self.ds.coords:
+            # Classify variables
+            if var_name in boundary_vars:
+                metadata['boundary_vars'].append(var_name)
+            elif var_name in self.ds.coords:
                 metadata['coordinate_vars'].append(var_name)
             else:
                 metadata['data_vars'].append(var_name)
@@ -208,22 +225,27 @@ class NetCDFToCDIConverter:
     def create_dimensional_data_structure(self, metadata: Dict) -> Dict:
         """Create DimensionalDataStructure component."""
         # Create component references (coordinates as dimensions, data vars as qualified measures)
+        # Note: boundary variables are excluded from structure components
         component_refs = []
 
         # Add coordinate variables as dimension components
         for coord_var in metadata['coordinate_vars']:
             component_refs.append(f"{self.base_id}dimensionComponent-{coord_var}")
 
-        # Add data variables as qualified measures
+        # Add data variables as qualified measures (excluding boundaries)
         for data_var in metadata['data_vars']:
             component_refs.append(f"{self.base_id}qualifiedMeasure-{data_var}")
+
+        # Get all non-boundary variables for InstanceVariable references
+        all_vars = (metadata['coordinate_vars'] + metadata['data_vars'] +
+                   metadata['boundary_vars'])
 
         return {
             "@id": f"{self.base_id}dimensionalDataStructure",
             "@type": "DimensionalDataStructure",
             "has_InstanceVariable": [
                 f"{self.base_id}instanceVariable-{var_name}"
-                for var_name in metadata['variables'].keys()
+                for var_name in all_vars
             ],
             "has_DataStructureComponent": component_refs
         }
@@ -283,15 +305,19 @@ class NetCDFToCDIConverter:
         position = 1
         for var_name, var_info in metadata['variables'].items():
             is_coordinate = var_name in metadata['coordinate_vars']
+            is_boundary = var_name in metadata['boundary_vars']
 
+            # Create instance variable and value domain for all variables
             models.append(self.create_instance_variable(var_name, var_info, is_coordinate))
             models.append(self.create_substantive_value_domain(var_name, var_info))
             models.append(self.create_value_and_concept_description(var_name, var_info))
             models.append(self.create_component_position(var_name, position))
 
+            # Only create structure components for coordinates and true data variables
+            # (exclude boundary variables from structure components)
             if is_coordinate:
                 models.append(self.create_dimension_component(var_name, position))
-            else:
+            elif not is_boundary:
                 models.append(self.create_qualified_measure(var_name, position))
 
             position += 1
