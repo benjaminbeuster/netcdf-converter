@@ -272,8 +272,8 @@ app.layout = dbc.Container([
                                         "editable": False
                                     },
                                     {
-                                        "name": "format",
-                                        "id": "format",
+                                        "name": "data type",
+                                        "id": "data type",
                                         "editable": False
                                     },
                                     {

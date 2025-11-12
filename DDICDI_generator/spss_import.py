@@ -1250,20 +1250,64 @@ def create_dataframe_from_dict(d: dict, column_names: list):
         return pd.DataFrame(columns=column_names)
 
 
+def _map_dtype_to_xsd_simple_name(dtype_str):
+    """
+    Map NumPy/Python dtype string to simple XSD type name.
+
+    Returns the simple name (e.g., 'double', 'float', 'string') that would appear
+    in the XSD URI http://www.w3.org/2001/XMLSchema#{name}
+    """
+    # Normalize the dtype string
+    dtype_lower = str(dtype_str).lower()
+
+    # Mapping based on what's used in netcdf_to_cdi.py map_netcdf_dtype_to_xsd()
+    # Check unsigned types first before signed types
+    if 'uint64' in dtype_lower:
+        return 'unsignedLong'
+    elif 'uint32' in dtype_lower:
+        return 'unsignedInt'
+    elif 'uint16' in dtype_lower:
+        return 'unsignedShort'
+    elif 'uint8' in dtype_lower:
+        return 'unsignedByte'
+    elif 'float64' in dtype_lower or 'double' in dtype_lower:
+        return 'double'
+    elif 'float32' in dtype_lower or 'float16' in dtype_lower or 'float' in dtype_lower:
+        return 'float'
+    elif 'int64' in dtype_lower:
+        return 'long'
+    elif 'int32' in dtype_lower:
+        return 'int'
+    elif 'int16' in dtype_lower:
+        return 'short'
+    elif 'int8' in dtype_lower:
+        return 'byte'
+    elif 'datetime' in dtype_lower or 'timestamp' in dtype_lower:
+        return 'dateTime'
+    elif 'bool' in dtype_lower:
+        return 'boolean'
+    else:
+        return 'string'
+
 def create_variable_view_common(df_meta):
     # Extract the attributes from df_meta
     label = df_meta.column_names_to_labels
-    format = df_meta.original_variable_types
+    data_types = df_meta.original_variable_types
     measure = df_meta.variable_measure
+
+    # Convert data types to XSD simple names for display
+    xsd_types = {}
+    for var_name, dtype in data_types.items():
+        xsd_types[var_name] = _map_dtype_to_xsd_simple_name(dtype)
 
     # Convert dictionaries into individual dataframes
     df_label = pd.DataFrame(list(label.items()), columns=['name', 'label'])
-    df_format = pd.DataFrame(list(format.items()), columns=['name', 'format'])
+    df_data_type = pd.DataFrame(list(xsd_types.items()), columns=['name', 'data type'])
     df_measure = pd.DataFrame(list(measure.items()), columns=['name', 'measure'])
 
     # Merge dataframes on the 'name' column
     variable_view = df_label \
-        .merge(df_format, on='name', how='outer') \
+        .merge(df_data_type, on='name', how='outer') \
         .merge(df_measure, on='name', how='outer')
 
     return variable_view
@@ -1292,7 +1336,7 @@ def create_variable_view(df_meta):
 
     variable_view.replace({np.nan: None, pd.NA: None}, inplace=True)
 
-    return variable_view[['name', 'format', 'label', 'values', 'missing', 'measure']]
+    return variable_view[['name', 'data type', 'label', 'values', 'missing', 'measure']]
 
 
 def create_variable_view2(df_meta):
@@ -1329,7 +1373,7 @@ def create_variable_view2(df_meta):
 
     variable_view.replace({np.nan: None, pd.NA: None}, inplace=True)
 
-    return variable_view[['name', 'format', 'label', 'values', 'missing', 'measure']]
+    return variable_view[['name', 'data type', 'label', 'values', 'missing', 'measure']]
 
 
 def read_netcdf(filename: Path, sample_size=1000, **kwargs):
@@ -1402,20 +1446,20 @@ def read_netcdf(filename: Path, sample_size=1000, **kwargs):
             # Store attributes
             netcdf_attrs[coord_var] = dict(ds.coords[coord_var].attrs)
 
-            # Determine data type
+            # Store the actual dtype string for display (e.g., 'float64', 'datetime64[ns]')
+            dtype_str = str(ds.coords[coord_var].dtype)
+            variable_types[coord_var] = dtype_str
+
+            # Determine measure type
             if np.issubdtype(coord_data.dtype, np.datetime64):
-                variable_types[coord_var] = 'datetime'
                 measure_types[coord_var] = 'scale'
                 # Convert to string for easier handling
                 coord_data = pd.to_datetime(coord_data).astype(str)
             elif np.issubdtype(coord_data.dtype, np.integer):
-                variable_types[coord_var] = 'numeric'
                 measure_types[coord_var] = 'scale'
             elif np.issubdtype(coord_data.dtype, np.floating):
-                variable_types[coord_var] = 'numeric'
                 measure_types[coord_var] = 'scale'
             else:
-                variable_types[coord_var] = 'string'
                 measure_types[coord_var] = 'nominal'
 
             # Create label from attributes
@@ -1457,15 +1501,16 @@ def read_netcdf(filename: Path, sample_size=1000, **kwargs):
             # Get data values
             data_values = ds.data_vars[data_var].values
 
-            # Determine data type
+            # Store the actual dtype string for display (e.g., 'float32', 'int32')
+            dtype_str = str(ds.data_vars[data_var].dtype)
+            variable_types[data_var] = dtype_str
+
+            # Determine measure type
             if np.issubdtype(data_values.dtype, np.integer):
-                variable_types[data_var] = 'numeric'
                 measure_types[data_var] = 'scale'
             elif np.issubdtype(data_values.dtype, np.floating):
-                variable_types[data_var] = 'numeric'
                 measure_types[data_var] = 'scale'
             else:
-                variable_types[data_var] = 'string'
                 measure_types[data_var] = 'nominal'
 
             # Create label from attributes
