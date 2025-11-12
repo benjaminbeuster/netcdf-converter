@@ -14,6 +14,8 @@ __pycache__/
 *.jsonld
 tas_sample_data.json
 *_values.json
+tas_all_data.json
+*_all_data.json
 
 # System files
 .DS_Store
