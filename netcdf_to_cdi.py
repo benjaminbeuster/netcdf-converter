@@ -272,7 +272,7 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}dimensionComponent-{var_name}",
             "@type": "DimensionComponent",
-            "isDefinedBy_InstanceVariable": f"{self.base_id}instanceVariable-{var_name}",
+            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}",
             "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
         }
 
@@ -281,7 +281,7 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}qualifiedMeasure-{var_name}",
             "@type": "QualifiedMeasure",
-            "isDefinedBy_InstanceVariable": f"{self.base_id}instanceVariable-{var_name}",
+            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}",
             "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
         }
 
@@ -290,7 +290,7 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}attributeComponent-{var_name}",
             "@type": "AttributeComponent",
-            "isDefinedBy_InstanceVariable": f"{self.base_id}instanceVariable-{var_name}",
+            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}",
             "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
         }
 
