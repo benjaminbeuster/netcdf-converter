@@ -148,7 +148,8 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}physicalRecordSegment",
             "@type": "PhysicalRecordSegment",
-            "describes": f"{self.base_id}logicalRecord"
+            "mapsTo": f"{self.base_id}logicalRecord",
+            "has_PhysicalSegmentLayout": f"{self.base_id}physicalSegmentLayout"
         }
 
     def create_instance_variable(self, var_name: str, var_info: Dict,
@@ -211,15 +212,9 @@ class NetCDFToCDIConverter:
         """Create ValueAndConceptDescription component."""
         description = {
             "@id": f"{self.base_id}substantiveValueAndConceptDescription-{var_name}",
-            "@type": "ValueAndConceptDescription"
+            "@type": "ValueAndConceptDescription",
+            "classificationLevel": "Continuous"
         }
-
-        # Add units if available
-        if 'units' in var_info['attrs']:
-            description["unitOfMeasure"] = {
-                "@type": "ControlledVocabularyEntry",
-                "entryValue": var_info['attrs']['units']
-            }
 
         return description
 
@@ -228,11 +223,7 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}dimensionalDataSet",
             "@type": "DimensionalDataSet",
-            "name": {
-                "@type": "ObjectName",
-                "name": metadata['filename']
-            },
-            "has_DataStructure": f"{self.base_id}dimensionalDataStructure"
+            "isStructuredBy": f"{self.base_id}dimensionalDataStructure"
         }
 
     def create_dimensional_data_structure(self, metadata: Dict) -> Dict:
@@ -253,16 +244,9 @@ class NetCDFToCDIConverter:
 
         # Note: boundary_vars are now excluded, so we don't add them
 
-        # Get all non-excluded variables for InstanceVariable references
-        all_vars = metadata['coordinate_vars'] + metadata['data_vars']
-
         return {
             "@id": f"{self.base_id}dimensionalDataStructure",
             "@type": "DimensionalDataStructure",
-            "has_InstanceVariable": [
-                f"{self.base_id}instanceVariable-{var_name}"
-                for var_name in all_vars
-            ],
             "has_DataStructureComponent": component_refs,
             "has_PrimaryKey": f"{self.base_id}primaryKey"
         }
@@ -272,8 +256,7 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}dimensionComponent-{var_name}",
             "@type": "DimensionComponent",
-            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}",
-            "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
+            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}"
         }
 
     def create_qualified_measure(self, var_name: str, position: int) -> Dict:
@@ -281,8 +264,7 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}qualifiedMeasure-{var_name}",
             "@type": "QualifiedMeasure",
-            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}",
-            "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
+            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}"
         }
 
     def create_attribute_component(self, var_name: str, position: int) -> Dict:
@@ -290,8 +272,7 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}attributeComponent-{var_name}",
             "@type": "AttributeComponent",
-            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}",
-            "correspondsTo": f"{self.base_id}componentPosition-{var_name}",
+            "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}"
         }
 
     def create_component_position(self, var_name: str, position: int) -> Dict:
@@ -329,7 +310,11 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}physicalSegmentLayout",
             "@type": "PhysicalSegmentLayout",
-            "formats": f"{self.base_id}logicalRecord"
+            "allowsDuplicates": False,
+            "formats": f"{self.base_id}logicalRecord",
+            "isDelimited": False,
+            "isFixedWidth": False,
+            "delimiter": ""
         }
 
     def convert(self) -> Dict:
@@ -369,7 +354,6 @@ class NetCDFToCDIConverter:
             models.append(self.create_instance_variable(var_name, var_info, is_coordinate))
             models.append(self.create_substantive_value_domain(var_name, var_info))
             models.append(self.create_value_and_concept_description(var_name, var_info))
-            models.append(self.create_component_position(var_name, position))
 
             # Create appropriate structure component based on variable type:
             # - Coordinate variables -> DimensionComponent
