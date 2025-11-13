@@ -137,20 +137,30 @@ class NetCDFToCDIConverter:
         return {
             "@id": f"{self.base_id}logicalRecord",
             "@type": "LogicalRecord",
+            "organizes": f"{self.base_id}dimensionalDataSet",
             "has_InstanceVariable": [
                 f"{self.base_id}instanceVariable-{var_name}"
                 for var_name in all_vars
             ]
         }
 
-    def create_physical_record_segment(self, metadata: Dict) -> Dict:
+    def create_physical_record_segment(self, metadata: Dict, max_rows: int = 5) -> Dict:
         """Create PhysicalRecordSegment component."""
-        return {
+        segment = {
             "@id": f"{self.base_id}physicalRecordSegment",
             "@type": "PhysicalRecordSegment",
             "mapsTo": f"{self.base_id}logicalRecord",
-            "has_PhysicalSegmentLayout": f"{self.base_id}physicalSegmentLayout"
+            "has_PhysicalSegmentLayout": f"{self.base_id}physicalSegmentLayout",
+            "has_DataPointPosition": []
         }
+
+        # Add DataPointPosition references for each variable and row
+        all_vars = metadata['coordinate_vars'] + metadata['data_vars']
+        for variable in all_vars:
+            for i in range(max_rows):
+                segment["has_DataPointPosition"].append(f"{self.base_id}dataPointPosition-{i}-{variable}")
+
+        return segment
 
     def create_instance_variable(self, var_name: str, var_info: Dict,
                                  is_coordinate: bool) -> Dict:
@@ -158,10 +168,16 @@ class NetCDFToCDIConverter:
         instance_var = {
             "@id": f"{self.base_id}instanceVariable-{var_name}",
             "@type": "InstanceVariable",
+            "physicalDataType": {
+                "@type": "ControlledVocabularyEntry",
+                "entryValue": var_info['dtype']
+            },
             "name": {
                 "@type": "ObjectName",
                 "name": var_name
             },
+            "has_PhysicalSegmentLayout": f"{self.base_id}physicalSegmentLayout",
+            "has_ValueMapping": f"{self.base_id}valueMapping-{var_name}",
             "takesSubstantiveValuesFrom_SubstantiveValueDomain":
                 f"{self.base_id}substantiveValueDomain-{var_name}"
         }
@@ -183,12 +199,6 @@ class NetCDFToCDIConverter:
                     "entryValue": var_info['attrs']['standard_name']
                 }
             }
-
-        # Add physical data type
-        instance_var["physicalDataType"] = {
-            "@type": "ControlledVocabularyEntry",
-            "entryValue": var_info['dtype']
-        }
 
         return instance_var
 
@@ -233,14 +243,20 @@ class NetCDFToCDIConverter:
         # - Data variables -> QualifiedMeasure
         # - Boundary variables -> AttributeComponent (excluded now)
         component_refs = []
+        position_refs = []
 
         # Add coordinate variables as dimension components
+        position = 0
         for coord_var in metadata['coordinate_vars']:
             component_refs.append(f"{self.base_id}dimensionComponent-{coord_var}")
+            position_refs.append(f"{self.base_id}componentPosition-{position}")
+            position += 1
 
         # Add data variables as qualified measures
         for data_var in metadata['data_vars']:
             component_refs.append(f"{self.base_id}qualifiedMeasure-{data_var}")
+            position_refs.append(f"{self.base_id}componentPosition-{position}")
+            position += 1
 
         # Note: boundary_vars are now excluded, so we don't add them
 
@@ -248,6 +264,7 @@ class NetCDFToCDIConverter:
             "@id": f"{self.base_id}dimensionalDataStructure",
             "@type": "DimensionalDataStructure",
             "has_DataStructureComponent": component_refs,
+            "has_ComponentPosition": position_refs,
             "has_PrimaryKey": f"{self.base_id}primaryKey"
         }
 
@@ -275,12 +292,13 @@ class NetCDFToCDIConverter:
             "isDefinedBy_RepresentedVariable": f"{self.base_id}instanceVariable-{var_name}"
         }
 
-    def create_component_position(self, var_name: str, position: int) -> Dict:
+    def create_component_position(self, component_ref: str, position: int) -> Dict:
         """Create ComponentPosition."""
         return {
-            "@id": f"{self.base_id}componentPosition-{var_name}",
+            "@id": f"{self.base_id}componentPosition-{position}",
             "@type": "ComponentPosition",
-            "value": position
+            "value": position,
+            "indexes": component_ref
         }
 
     def create_primary_key(self, metadata: Dict) -> Dict:
@@ -305,20 +323,84 @@ class NetCDFToCDIConverter:
             "correspondsTo_DataStructureComponent": f"{self.base_id}dimensionComponent-{var_name}"
         }
 
-    def create_physical_segment_layout(self) -> Dict:
-        """Create PhysicalSegmentLayout component."""
+    def create_value_mapping(self, var_name: str, max_rows: int = 5) -> Dict:
+        """Create ValueMapping component."""
+        formats = [f"{self.base_id}dataPoint-{i}-{var_name}" for i in range(max_rows)]
+
         return {
+            "@id": f"{self.base_id}valueMapping-{var_name}",
+            "@type": "ValueMapping",
+            "defaultValue": "",
+            "formats": formats
+        }
+
+    def create_value_mapping_position(self, var_name: str, position: int) -> Dict:
+        """Create ValueMappingPosition component."""
+        return {
+            "@id": f"{self.base_id}valueMappingPosition-{var_name}",
+            "@type": "ValueMappingPosition",
+            "value": position,
+            "indexes": f"{self.base_id}valueMapping-{var_name}"
+        }
+
+    def create_data_point(self, var_name: str, row_index: int) -> Dict:
+        """Create DataPoint component."""
+        return {
+            "@id": f"{self.base_id}dataPoint-{row_index}-{var_name}",
+            "@type": "DataPoint",
+            "isDescribedBy": f"{self.base_id}instanceVariable-{var_name}",
+            "has_DataPoint_OF_DataSet": f"{self.base_id}dimensionalDataSet"
+        }
+
+    def create_data_point_position(self, var_name: str, row_index: int) -> Dict:
+        """Create DataPointPosition component."""
+        return {
+            "@id": f"{self.base_id}dataPointPosition-{row_index}-{var_name}",
+            "@type": "DataPointPosition",
+            "value": row_index,
+            "indexes": f"{self.base_id}dataPoint-{row_index}-{var_name}"
+        }
+
+    def create_instance_value(self, var_name: str, row_index: int, value: Any) -> Dict:
+        """Create InstanceValue component."""
+        return {
+            "@id": f"{self.base_id}instanceValue-{row_index}-{var_name}",
+            "@type": "InstanceValue",
+            "content": {
+                "@type": "TypedString",
+                "content": str(value)
+            },
+            "isStoredIn": f"{self.base_id}dataPoint-{row_index}-{var_name}",
+            "hasValueFrom_ValueDomain": f"{self.base_id}substantiveValueDomain-{var_name}"
+        }
+
+    def create_physical_segment_layout(self, metadata: Dict) -> Dict:
+        """Create PhysicalSegmentLayout component."""
+        all_vars = metadata['coordinate_vars'] + metadata['data_vars']
+
+        layout = {
             "@id": f"{self.base_id}physicalSegmentLayout",
             "@type": "PhysicalSegmentLayout",
             "allowsDuplicates": False,
             "formats": f"{self.base_id}logicalRecord",
             "isDelimited": False,
             "isFixedWidth": False,
-            "delimiter": ""
+            "delimiter": "",
+            "has_ValueMappingPosition": []
         }
 
-    def convert(self) -> Dict:
-        """Convert NetCDF to DDI-CDI JSON-LD."""
+        # Add ValueMappingPosition references for each variable
+        for variable in all_vars:
+            layout["has_ValueMappingPosition"].append(f"{self.base_id}valueMappingPosition-{variable}")
+
+        return layout
+
+    def convert(self, max_rows: int = 5) -> Dict:
+        """Convert NetCDF to DDI-CDI JSON-LD.
+
+        Args:
+            max_rows: Maximum number of data rows to include (default: 5)
+        """
         metadata = self.extract_metadata()
 
         # Build DDICDIModels array
@@ -326,24 +408,67 @@ class NetCDFToCDIConverter:
 
         # Add core components
         models.append(self.create_physical_dataset(metadata))
+        models.append(self.create_physical_record_segment(metadata, max_rows))
+        models.append(self.create_physical_segment_layout(metadata))
+
+        # Get all non-excluded variables
+        all_vars = metadata['coordinate_vars'] + metadata['data_vars']
+
+        # Add ValueMapping and ValueMappingPosition for each variable
+        for idx, var_name in enumerate(all_vars):
+            models.append(self.create_value_mapping(var_name, max_rows))
+
+        for idx, var_name in enumerate(all_vars):
+            models.append(self.create_value_mapping_position(var_name, idx))
+
+        # Add DataPoint and DataPointPosition for each variable and row
+        for var_name in all_vars:
+            for row_idx in range(max_rows):
+                models.append(self.create_data_point(var_name, row_idx))
+
+        for var_name in all_vars:
+            for row_idx in range(max_rows):
+                models.append(self.create_data_point_position(var_name, row_idx))
+
+        # Add InstanceValue with actual data
+        for var_name in all_vars:
+            var_data = self.ds[var_name]
+            # Flatten the data to get first max_rows values
+            flat_data = var_data.values.flatten()[:max_rows]
+
+            for row_idx, value in enumerate(flat_data):
+                models.append(self.create_instance_value(var_name, row_idx, value))
+
+        # Add logical and dimensional components
         models.append(self.create_data_store(metadata))
         models.append(self.create_logical_record(metadata))
-        models.append(self.create_physical_record_segment(metadata))
         models.append(self.create_dimensional_dataset(metadata))
         models.append(self.create_dimensional_data_structure(metadata))
-        models.append(self.create_physical_segment_layout())
 
-        # Add primary key components
-        models.append(self.create_primary_key(metadata))
-        for coord_var in metadata['coordinate_vars']:
-            models.append(self.create_primary_key_component(coord_var))
-
-        # Add instance variables and value domains (skip excluded variables)
-        position = 1
+        # Add structure components (QualifiedMeasure, DimensionComponent)
+        position = 0
         for var_name, var_info in metadata['variables'].items():
             is_coordinate = var_name in metadata['coordinate_vars']
-            is_boundary = var_name in metadata['boundary_vars']
             is_data_var = var_name in metadata['data_vars']
+            is_excluded = var_name in metadata['excluded_vars']
+
+            # Skip excluded variables
+            if is_excluded:
+                continue
+
+            # Create appropriate structure component based on variable type
+            if is_coordinate:
+                models.append(self.create_dimension_component(var_name, position))
+                component_ref = f"{self.base_id}dimensionComponent-{var_name}"
+            elif is_data_var:
+                models.append(self.create_qualified_measure(var_name, position))
+                component_ref = f"{self.base_id}qualifiedMeasure-{var_name}"
+
+            position += 1
+
+        # Add instance variables and value domains (skip excluded variables)
+        for var_name, var_info in metadata['variables'].items():
+            is_coordinate = var_name in metadata['coordinate_vars']
             is_excluded = var_name in metadata['excluded_vars']
 
             # Skip excluded variables
@@ -355,17 +480,21 @@ class NetCDFToCDIConverter:
             models.append(self.create_substantive_value_domain(var_name, var_info))
             models.append(self.create_value_and_concept_description(var_name, var_info))
 
-            # Create appropriate structure component based on variable type:
-            # - Coordinate variables -> DimensionComponent
-            # - Data variables -> QualifiedMeasure
-            # - Boundary variables -> AttributeComponent (won't occur since boundaries are excluded)
-            if is_coordinate:
-                models.append(self.create_dimension_component(var_name, position))
-            elif is_data_var:
-                models.append(self.create_qualified_measure(var_name, position))
-            elif is_boundary:
-                models.append(self.create_attribute_component(var_name, position))
+        # Add primary key components
+        models.append(self.create_primary_key(metadata))
+        for coord_var in metadata['coordinate_vars']:
+            models.append(self.create_primary_key_component(coord_var))
 
+        # Add ComponentPosition for each component
+        position = 0
+        for coord_var in metadata['coordinate_vars']:
+            component_ref = f"{self.base_id}dimensionComponent-{coord_var}"
+            models.append(self.create_component_position(component_ref, position))
+            position += 1
+
+        for data_var in metadata['data_vars']:
+            component_ref = f"{self.base_id}qualifiedMeasure-{data_var}"
+            models.append(self.create_component_position(component_ref, position))
             position += 1
 
         # Build final JSON-LD document
@@ -376,21 +505,26 @@ class NetCDFToCDIConverter:
                     "skos": "http://www.w3.org/2004/02/skos/core#"
                 }
             ],
-            "DDICDIModels": models,
-            "@included": []  # Can add SKOS concepts here if needed
+            "DDICDIModels": models
         }
 
         return cdi_document
 
-    def convert_and_save(self, output_path: str):
-        """Convert and save to file."""
-        cdi_document = self.convert()
+    def convert_and_save(self, output_path: str, max_rows: int = 5):
+        """Convert and save to file.
+
+        Args:
+            output_path: Path to save the JSON-LD output
+            max_rows: Maximum number of data rows to include (default: 5)
+        """
+        cdi_document = self.convert(max_rows=max_rows)
 
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(cdi_document, f, indent=2, ensure_ascii=False)
+            json.dump(cdi_document, f, indent=4, ensure_ascii=False)
 
         print(f"Converted {self.netcdf_path.name} to {output_path}")
         print(f"Generated {len(cdi_document['DDICDIModels'])} DDI-CDI components")
+        print(f"Included {max_rows} rows of data")
 
     def __del__(self):
         """Close the dataset when done."""
@@ -403,17 +537,22 @@ def main():
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python netcdf_to_cdi.py <netcdf_file> [output_file]")
+        print("Usage: python netcdf_to_cdi.py <netcdf_file> [output_file] [max_rows]")
         print("\nExample:")
-        print("  python netcdf_to_cdi.py data.nc output.jsonld")
+        print("  python netcdf_to_cdi.py data.nc output.jsonld 5")
+        print("\nArguments:")
+        print("  netcdf_file: Path to input NetCDF file")
+        print("  output_file: Path to output JSON-LD file (default: output.jsonld)")
+        print("  max_rows: Maximum number of data rows to include (default: 5)")
         sys.exit(1)
 
     netcdf_path = sys.argv[1]
     output_path = sys.argv[2] if len(sys.argv) > 2 else "output.jsonld"
+    max_rows = int(sys.argv[3]) if len(sys.argv) > 3 else 5
 
     # Convert
     converter = NetCDFToCDIConverter(netcdf_path)
-    converter.convert_and_save(output_path)
+    converter.convert_and_save(output_path, max_rows=max_rows)
 
 
 if __name__ == "__main__":
