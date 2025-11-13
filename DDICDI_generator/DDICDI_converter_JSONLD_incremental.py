@@ -294,7 +294,7 @@ def generate_MeasureComponent(df_meta):
                 elements = {
                     "@id": f"#{component_id_prefix}-{variable}",
                     "@type": component_type,
-                    "isDefinedBy_InstanceVariable": f"#instanceVariable-{variable}"
+                    "isDefinedBy_RepresentedVariable": f"#instanceVariable-{variable}"
                 }
                 json_ld_data.append(elements)
     # Also handle any variables not explicitly assigned roles (default to measure)
@@ -305,7 +305,7 @@ def generate_MeasureComponent(df_meta):
                 elements = {
                     "@id": f"#{component_id_prefix}-{variable}",
                     "@type": component_type,
-                    "isDefinedBy_InstanceVariable": f"#instanceVariable-{variable}"
+                    "isDefinedBy_RepresentedVariable": f"#instanceVariable-{variable}"
                 }
                 json_ld_data.append(elements)
     return json_ld_data
@@ -325,7 +325,7 @@ def generate_IdentifierComponent(df_meta):
                 elements = {
                     "@id": f"#{component_id_prefix}-{variable}",
                     "@type": component_type,
-                    "isDefinedBy_InstanceVariable": f"#instanceVariable-{variable}"
+                    "isDefinedBy_RepresentedVariable": f"#instanceVariable-{variable}"
                 }
                 json_ld_data.append(elements)
     return json_ld_data
@@ -412,28 +412,33 @@ def generate_VariableDescriptorComponent(df_meta):
 def generate_ComponentPosition(df_meta):
     """Generate ComponentPosition entries for all components in the data structure"""
     json_ld_data = []
-    
-    # Check if this is a JSON file to use different component logic
+
+    # Check file format to use correct component naming
     is_json_file = hasattr(df_meta, 'file_format') and df_meta.file_format == 'json'
-    
+    is_netcdf = hasattr(df_meta, 'file_format') and df_meta.file_format == 'netcdf'
+
     # Build list of all components with their positions (0-based indexing)
     position = 0
-    
+
     # Process all variables in the order they appear in column_names
     for variable in df_meta.column_names:
         component_references = []
-        
+
         # Collect all component types this variable belongs to
         if hasattr(df_meta, 'identifier_vars') and df_meta.identifier_vars and variable in df_meta.identifier_vars:
-            component_references.append(f"#identifierComponent-{variable}")
-        
+            # Use dimensionComponent for NetCDF, identifierComponent otherwise
+            component_id = f"#dimensionComponent-{variable}" if is_netcdf else f"#identifierComponent-{variable}"
+            component_references.append(component_id)
+
         if hasattr(df_meta, 'attribute_vars') and df_meta.attribute_vars and variable in df_meta.attribute_vars:
             component_references.append(f"#attributeComponent-{variable}")
-        
+
         if not is_json_file:
             # Non-JSON specific components
             if hasattr(df_meta, 'measure_vars') and df_meta.measure_vars and variable in df_meta.measure_vars:
-                component_references.append(f"#measureComponent-{variable}")
+                # Use qualifiedMeasure for NetCDF, measureComponent otherwise
+                component_id = f"#qualifiedMeasure-{variable}" if is_netcdf else f"#measureComponent-{variable}"
+                component_references.append(component_id)
         else:
             # JSON-specific components
             if hasattr(df_meta, 'contextual_vars') and df_meta.contextual_vars and variable in df_meta.contextual_vars:
@@ -474,13 +479,18 @@ def generate_PrimaryKey(df_meta):
 
 def generate_PrimaryKeyComponent(df_meta):
     json_ld_data = []
+
+    # Check if this is a NetCDF file to use correct component ID references
+    is_netcdf = hasattr(df_meta, 'file_format') and df_meta.file_format == 'netcdf'
+    component_id_prefix = "dimensionComponent" if is_netcdf else "identifierComponent"
+
     if hasattr(df_meta, 'identifier_vars') and df_meta.identifier_vars:
         for variable in df_meta.identifier_vars:
             if variable in df_meta.column_names:  # Verify variable exists in dataset
                 elements = {
                     "@id": f"#primaryKeyComponent-{variable}",
                     "@type": "PrimaryKeyComponent",
-                    "correspondsTo_DataStructureComponent": f"#identifierComponent-{variable}"
+                    "correspondsTo_DataStructureComponent": f"#{component_id_prefix}-{variable}"
                 }
                 json_ld_data.append(elements)
     return json_ld_data
