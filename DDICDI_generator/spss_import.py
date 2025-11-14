@@ -1553,35 +1553,69 @@ def read_netcdf(filename: Path, sample_size=1000, selected_variable=None, **kwar
     column_labels = {}
     netcdf_attrs = {}  # Store NetCDF attributes for each variable
 
-    # Process coordinate variables (dimensions)
-    for coord_var in coord_vars:
-        if coord_var in ds.coords:
-            column_names.append(coord_var)
-            coord_data = ds.coords[coord_var].values
+    # Process coordinate variables (dimensions) and dimension metadata
+    # For selected variables, we need to process all dimensions they use
+    if selected_variable and selected_variable in ds.variables:
+        selected_var_dims = list(ds.variables[selected_variable].dims)
+        for dim in selected_var_dims:
+            if dim in ds.coords:
+                # Process coordinate variable
+                if dim not in column_names:
+                    column_names.append(dim)
+                coord_data = ds.coords[dim].values
 
-            # Store attributes
-            netcdf_attrs[coord_var] = dict(ds.coords[coord_var].attrs)
+                # Store attributes
+                netcdf_attrs[dim] = dict(ds.coords[dim].attrs)
 
-            # Store the actual dtype string for display (e.g., 'float64', 'datetime64[ns]')
-            dtype_str = str(ds.coords[coord_var].dtype)
-            variable_types[coord_var] = dtype_str
+                # Store the actual dtype string for display
+                dtype_str = str(ds.coords[dim].dtype)
+                variable_types[dim] = dtype_str
 
-            # Determine measure type
-            if np.issubdtype(coord_data.dtype, np.datetime64):
-                measure_types[coord_var] = 'scale'
-                # Convert to string for easier handling
-                coord_data = pd.to_datetime(coord_data).astype(str)
-            elif np.issubdtype(coord_data.dtype, np.integer):
-                measure_types[coord_var] = 'scale'
-            elif np.issubdtype(coord_data.dtype, np.floating):
-                measure_types[coord_var] = 'scale'
-            else:
-                measure_types[coord_var] = 'nominal'
+                # Determine measure type
+                if np.issubdtype(coord_data.dtype, np.datetime64):
+                    measure_types[dim] = 'scale'
+                elif np.issubdtype(coord_data.dtype, np.integer):
+                    measure_types[dim] = 'scale'
+                elif np.issubdtype(coord_data.dtype, np.floating):
+                    measure_types[dim] = 'scale'
+                else:
+                    measure_types[dim] = 'nominal'
 
-            # Create label from attributes
-            long_name = netcdf_attrs[coord_var].get('long_name', coord_var)
-            units = netcdf_attrs[coord_var].get('units', '')
-            column_labels[coord_var] = f"{long_name} ({units})" if units else long_name
+                # Create label from attributes
+                long_name = netcdf_attrs[dim].get('long_name', dim)
+                units = netcdf_attrs[dim].get('units', '')
+                column_labels[dim] = f"{long_name} ({units})" if units else long_name
+            # Dimension metadata for non-coordinate dimensions will be added in meshgrid section
+    else:
+        # Legacy behavior: Process coordinate variables (dimensions)
+        for coord_var in coord_vars:
+            if coord_var in ds.coords:
+                column_names.append(coord_var)
+                coord_data = ds.coords[coord_var].values
+
+                # Store attributes
+                netcdf_attrs[coord_var] = dict(ds.coords[coord_var].attrs)
+
+                # Store the actual dtype string for display (e.g., 'float64', 'datetime64[ns]')
+                dtype_str = str(ds.coords[coord_var].dtype)
+                variable_types[coord_var] = dtype_str
+
+                # Determine measure type
+                if np.issubdtype(coord_data.dtype, np.datetime64):
+                    measure_types[coord_var] = 'scale'
+                    # Convert to string for easier handling
+                    coord_data = pd.to_datetime(coord_data).astype(str)
+                elif np.issubdtype(coord_data.dtype, np.integer):
+                    measure_types[coord_var] = 'scale'
+                elif np.issubdtype(coord_data.dtype, np.floating):
+                    measure_types[coord_var] = 'scale'
+                else:
+                    measure_types[coord_var] = 'nominal'
+
+                # Create label from attributes
+                long_name = netcdf_attrs[coord_var].get('long_name', coord_var)
+                units = netcdf_attrs[coord_var].get('units', '')
+                column_labels[coord_var] = f"{long_name} ({units})" if units else long_name
 
     # Select first data variable for sample extraction
     if not data_vars:
@@ -1590,21 +1624,56 @@ def read_netcdf(filename: Path, sample_size=1000, selected_variable=None, **kwar
     primary_data_var = data_vars[0]
 
     # Create meshgrid of coordinates for flattened data
-    # Get coordinate arrays
-    coord_arrays = []
-    for coord_var in coord_vars:
-        if coord_var in ds.coords:
-            coord_arrays.append(ds.coords[coord_var].values)
+    # For selected variables, we need to handle all dimensions (not just coordinate variables)
+    if selected_variable and selected_variable in ds.variables:
+        selected_var_dims = list(ds.variables[selected_variable].dims)
+        # Create arrays for all dimensions
+        dim_arrays = []
+        dim_names = []
+        for dim in selected_var_dims:
+            if dim in ds.coords and dim in coord_vars:
+                # Use actual coordinate values
+                dim_arrays.append(ds.coords[dim].values)
+                dim_names.append(dim)
+            elif dim in dimensions:
+                # Create index array for dimensions without coordinates
+                dim_arrays.append(np.arange(dim_sizes[dim]))
+                dim_names.append(dim)
 
-    # Flatten coordinates using meshgrid
-    if coord_arrays:
-        meshgrid_arrays = np.meshgrid(*coord_arrays, indexing='ij')
-        for i, coord_var in enumerate(coord_vars):
-            if np.issubdtype(meshgrid_arrays[i].dtype, np.datetime64):
-                # Convert datetime64 to string
-                df_data[coord_var] = pd.to_datetime(meshgrid_arrays[i].flatten()).astype(str).tolist()
-            else:
-                df_data[coord_var] = meshgrid_arrays[i].flatten().tolist()
+        # Flatten using meshgrid
+        if dim_arrays:
+            meshgrid_arrays = np.meshgrid(*dim_arrays, indexing='ij')
+            for i, dim_name in enumerate(dim_names):
+                if dim_name in ds.coords and np.issubdtype(meshgrid_arrays[i].dtype, np.datetime64):
+                    # Convert datetime64 to string
+                    df_data[dim_name] = pd.to_datetime(meshgrid_arrays[i].flatten()).astype(str).tolist()
+                else:
+                    df_data[dim_name] = meshgrid_arrays[i].flatten().tolist()
+
+                # Add to column_names if not already there
+                if dim_name not in column_names:
+                    column_names.append(dim_name)
+                    # Set variable type and measure type for dimension indices
+                    if dim_name not in ds.coords:
+                        variable_types[dim_name] = 'int64'
+                        measure_types[dim_name] = 'scale'
+                        column_labels[dim_name] = f"{dim_name} (index)"
+    else:
+        # Legacy behavior: Get coordinate arrays
+        coord_arrays = []
+        for coord_var in coord_vars:
+            if coord_var in ds.coords:
+                coord_arrays.append(ds.coords[coord_var].values)
+
+        # Flatten coordinates using meshgrid
+        if coord_arrays:
+            meshgrid_arrays = np.meshgrid(*coord_arrays, indexing='ij')
+            for i, coord_var in enumerate(coord_vars):
+                if np.issubdtype(meshgrid_arrays[i].dtype, np.datetime64):
+                    # Convert datetime64 to string
+                    df_data[coord_var] = pd.to_datetime(meshgrid_arrays[i].flatten()).astype(str).tolist()
+                else:
+                    df_data[coord_var] = meshgrid_arrays[i].flatten().tolist()
 
     # Add data variables
     for data_var in data_vars:
