@@ -1405,8 +1405,8 @@ def list_netcdf_variables(filename: Path):
     variables_info = []
 
     # Get dimensions info
-    dimensions = list(ds.dims.keys())
-    dim_sizes = {dim: ds.dims[dim] for dim in dimensions}
+    dimensions = list(ds.sizes.keys())
+    dim_sizes = {dim: ds.sizes[dim] for dim in dimensions}
 
     # Identify coordinate variables
     coord_vars = list(ds.coords.keys())
@@ -1496,8 +1496,8 @@ def read_netcdf(filename: Path, sample_size=1000, selected_variable=None, **kwar
         raise ValueError(f"Could not read NetCDF file: {e}")
 
     # Extract dimensions
-    dimensions = list(ds.dims.keys())
-    dim_sizes = {dim: ds.dims[dim] for dim in dimensions}
+    dimensions = list(ds.sizes.keys())
+    dim_sizes = {dim: ds.sizes[dim] for dim in dimensions}
 
     # Identify coordinate variables and data variables
     coord_vars = list(ds.coords.keys())
@@ -1509,17 +1509,27 @@ def read_netcdf(filename: Path, sample_size=1000, selected_variable=None, **kwar
             # Keep only the selected data variable
             data_vars = [selected_variable]
         elif selected_variable in coord_vars:
-            # If user somehow selected a coordinate, treat it as data variable
+            # If user selected a coordinate, treat it as data variable
             data_vars = [selected_variable]
+            coord_vars.remove(selected_variable)  # Remove from coord_vars to avoid duplication
+        elif selected_variable in ds.variables:
+            # Handle boundary variables, scalar coordinates, or any other variable
+            data_vars = [selected_variable]
+            # Get the dimensions used by the selected variable
+            selected_var_dims = list(ds.variables[selected_variable].dims)
+            # For boundary/special variables, populate coord_vars with coordinates matching the dimensions
+            coord_vars = [var for var in ds.coords.keys() if var in selected_var_dims and var in dimensions and dim_sizes.get(var, 0) > 1]
         else:
             raise ValueError(f"Selected variable '{selected_variable}' not found in NetCDF file")
 
-        # Get the dimensions used by the selected variable
-        selected_var_dims = list(ds.variables[selected_variable].dims)
+        # Get the dimensions used by the selected variable (already got above for the elif case)
+        if selected_variable in ds.variables:
+            selected_var_dims = list(ds.variables[selected_variable].dims)
 
-        # Filter coordinates to only those used by the selected variable
-        # Keep non-scalar coordinates that are dimensions of the selected variable
-        coord_vars = [var for var in coord_vars if var in selected_var_dims and var in dimensions and dim_sizes.get(var, 0) > 1]
+            # Filter coordinates to only those used by the selected variable
+            # Keep non-scalar coordinates that are dimensions of the selected variable
+            if coord_vars:  # Only filter if we still have coord_vars
+                coord_vars = [var for var in coord_vars if var in selected_var_dims and var in dimensions and dim_sizes.get(var, 0) > 1]
     else:
         # Legacy behavior: filter out boundary variables and scalar coordinates
         boundary_patterns = ['_bounds', '_bnds', '_bnd', '_bound']
@@ -1598,39 +1608,67 @@ def read_netcdf(filename: Path, sample_size=1000, selected_variable=None, **kwar
 
     # Add data variables
     for data_var in data_vars:
+        # Check both data_vars and all variables (for boundary variables, scalars, etc.)
         if data_var in ds.data_vars:
-            column_names.append(data_var)
+            var_obj = ds.data_vars[data_var]
+        elif data_var in ds.coords:
+            var_obj = ds.coords[data_var]
+        elif data_var in ds.variables:
+            var_obj = ds.variables[data_var]
+        else:
+            continue  # Skip if variable not found
 
-            # Store attributes
-            netcdf_attrs[data_var] = dict(ds.data_vars[data_var].attrs)
+        column_names.append(data_var)
 
-            # Get data values
-            data_values = ds.data_vars[data_var].values
+        # Store attributes
+        netcdf_attrs[data_var] = dict(var_obj.attrs)
 
-            # Store the actual dtype string for display (e.g., 'float32', 'int32')
-            dtype_str = str(ds.data_vars[data_var].dtype)
-            variable_types[data_var] = dtype_str
+        # Get data values
+        data_values = var_obj.values
 
-            # Determine measure type
-            if np.issubdtype(data_values.dtype, np.integer):
-                measure_types[data_var] = 'scale'
-            elif np.issubdtype(data_values.dtype, np.floating):
-                measure_types[data_var] = 'scale'
-            else:
-                measure_types[data_var] = 'nominal'
+        # Store the actual dtype string for display (e.g., 'float32', 'int32')
+        dtype_str = str(var_obj.dtype)
+        variable_types[data_var] = dtype_str
 
-            # Create label from attributes
-            long_name = netcdf_attrs[data_var].get('long_name', data_var)
-            units = netcdf_attrs[data_var].get('units', '')
-            standard_name = netcdf_attrs[data_var].get('standard_name', '')
+        # Determine measure type
+        if np.issubdtype(data_values.dtype, np.integer):
+            measure_types[data_var] = 'scale'
+        elif np.issubdtype(data_values.dtype, np.floating):
+            measure_types[data_var] = 'scale'
+        else:
+            measure_types[data_var] = 'nominal'
 
-            if standard_name:
-                column_labels[data_var] = f"{long_name} ({standard_name}) [{units}]" if units else f"{long_name} ({standard_name})"
-            else:
-                column_labels[data_var] = f"{long_name} [{units}]" if units else long_name
+        # Create label from attributes
+        long_name = netcdf_attrs[data_var].get('long_name', data_var)
+        units = netcdf_attrs[data_var].get('units', '')
+        standard_name = netcdf_attrs[data_var].get('standard_name', '')
 
-            # Flatten data values
-            df_data[data_var] = data_values.flatten().tolist()
+        if standard_name:
+            column_labels[data_var] = f"{long_name} ({standard_name}) [{units}]" if units else f"{long_name} ({standard_name})"
+        else:
+            column_labels[data_var] = f"{long_name} [{units}]" if units else long_name
+
+        # Flatten data values
+        flattened_data = data_values.flatten().tolist()
+        df_data[data_var] = flattened_data
+
+        # If we don't have coordinate variables (e.g., for boundary or scalar variables),
+        # add index columns for each dimension to make the data meaningful
+        if not coord_vars and data_var in ds.variables:
+            var_dims = list(ds.variables[data_var].dims)
+            if var_dims:
+                # Create index columns for each dimension
+                shape = ds.variables[data_var].shape
+                if len(shape) > 0:
+                    # Create multi-dimensional indices
+                    indices = np.indices(shape)
+                    for i, dim_name in enumerate(var_dims):
+                        if dim_name not in df_data:  # Only add if not already present
+                            column_names.insert(i, dim_name)
+                            df_data[dim_name] = indices[i].flatten().tolist()
+                            variable_types[dim_name] = 'int64'
+                            measure_types[dim_name] = 'scale'
+                            column_labels[dim_name] = f"{dim_name} (index)"
 
     # Create full DataFrame
     df_full = pd.DataFrame(df_data)
